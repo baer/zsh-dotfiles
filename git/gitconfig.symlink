@@ -1,30 +1,115 @@
 # Local/private config goes in the include
 [include]
         path = ~/.gitconfig.local
+
 [hub]
         protocol = https
+
 [alias]
+        # Display concise repository status
+        wtf  = !$DOTFILES/bin/git-wtf
+
+        # Delete all local branches that have been merged into HEAD
+        dall = branch -d `git branch --merged | grep -v '^*' | grep -v 'master' | tr -d '\n'`
+
+        # shortcuts
+        a  = add -A .
+        b  = branch
+        c  = commit
+        cb= = copy-branch-name
         co = checkout
+        s  = status -sb
+
+        # Diffs
+        sdiff = diff --shortstat
+        ndiff = diff --name-only
+        count = !git shortlog -sn
+        cdiff = "!sh -c ' git log --left-right --graph --cherry-pick --oneline master...$(git describe --abbrev=0 --tags)'"
+
+        # Logs
+        plog  = log --graph --pretty=format:'%Cred%h%Creset %an: %s - %Creset %C(yellow)%d%Creset %Cgreen(%cr)%Creset' --abbrev-commit --date=relative
+        logme = log --author="Eric"
+        blog  = log --graph --decorate --pretty=oneline --abbrev-commit
+
+        # Pull/Push
+        pm  = pull origin master
+        pd  = pull origin develop
+        pum = push origin master
+        pud = push origin develop
+
+        # Safeguards
+        rebase = rebase -i
+        blame = blame -w --no-merges
+
+        # Custom graph log (append any tree-ish)
+        graph = log --pretty=nice --date-order --graph
+        # Custom graph log for all branches
+        grapha = log --pretty=nice --date-order --graph --all
+
+        # Custom pretty log
+        logp = log --pretty=nice --date-order
+
+        # Diffstat log
+        logst = log --stat
+        # Short format diffstat log
+        logsf = log --stat --format=oneline --abbrev-commit
+
+        # Fetch and checkout a GitHub Pull Request from a remote (defaults to `origin`)
+        # Use: `git gh-pr 123` or `git gh-pr 123 upstream`
+        gh-pr = !bash -c 'git fetch -fu ${2:-origin} refs/pull/$1/head:gh-pr/$1 && git checkout gh-pr/$1' -
+
+        # Find out who is currently active on the repository
+        # Displays committers in descending order of number of commits
+        who = shortlog --numbered --summary --email --no-merges --since="3 months"
+
+        # Scripts
         promote = !$ZSH/bin/git-promote
         wtf     = !$ZSH/bin/git-wtf
         rank-contributors = !$ZSH/bin/git-rank-contributors
-        count   = !git shortlog -sn
+
 [color]
         diff = auto
         status = auto
         branch = auto
         ui = true
+
+[color "branch"]
+        current = yellow reverse
+        local = yellow
+        remote = green
+
+[color "status"]
+        added = green
+        changed = yellow
+        untracked = red
+
 [core]
+        attributesfile = ~/.gitattributes
+        excludesfile = ~/.gitignore
         excludesfile = ~/.gitignore
         editor = vim
+        ignorecase = false
+
 [apply]
         whitespace = nowarn
+
+[merge]
+        # Include summaries of merged commits in newly created merge commit messages
+        log = true
+
 [mergetool]
         keepBackup = false
+
+[branch "master"]
+        remote = origin
+        merge = refs/heads/master
+
 [difftool]
         prompt = false
+
 [help]
-        autocorrect = 1
+        autocorrect = 0
+
 [push]
         # See `git help config` (search for push.default)
         # for more information on different options of the below setting.
