@@ -96,7 +96,6 @@ defaults write com.apple.terminal StringEncodings -array 4
 
 # Misc: disable Dictionary results
 defaults write com.apple.spotlight DictionaryLookupEnabled -bool false
-Status API Training Shop Blog About
 
 # Use AirDrop over every interface. srsly this should be a default.
 defaults write com.apple.NetworkBrowser BrowseAllInterfaces 1
