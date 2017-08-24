@@ -28,6 +28,9 @@ alias pubkey="more ~/.ssh/id_rsa.pub | pbcopy | printf '=> Public key copied to 
 # Print the gzipped size of the contents of the clipboard
 alias gsize="pbpaste | gzip | wc -c"
 
+# Update forked repo from upstream
+alias updatefork="git fetch upstream && git checkout master && git rebase upstream/master"
+
 # ----------------------------------------------------------------------
 # Safeguards
 # ----------------------------------------------------------------------

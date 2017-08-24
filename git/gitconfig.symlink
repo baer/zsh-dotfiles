@@ -22,7 +22,7 @@
 
         # Diffs
         sdiff = diff --shortstat
-        ndiff = diff --name-only
+        ndiff = diff --name-status
         count = !git shortlog -sn
         cdiff = "!sh -c ' git log --left-right --graph --cherry-pick --oneline master...$(git describe --abbrev=0 --tags)'"
 
