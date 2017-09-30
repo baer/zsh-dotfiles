@@ -1,11 +1,13 @@
 cask_args appdir: '/Applications'
 
 tap 'homebrew/bundle'
+tap 'caskroom/fonts'
 
 brew 'ack'
 brew 'bash-completion'
 brew 'bash'
 brew 'coreutils'
+brew 'dynamodb-local'
 brew 'git-flow'
 brew 'git'
 brew 'grc'
@@ -17,6 +19,7 @@ brew 'zsh-completions'
 brew 'zsh'
 
 cask 'atom'
+cask 'font-fira-code'
 cask 'avg-antivirus'
 cask 'dash'
 cask 'evernote'
