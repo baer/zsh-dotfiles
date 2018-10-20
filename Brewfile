@@ -18,6 +18,7 @@ brew 'zsh-completions'
 brew 'zsh'
 
 cask 'atom'
+cask 'boostnote'
 cask 'dash'
 cask 'docker'
 cask 'dropbox'
