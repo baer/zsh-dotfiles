@@ -19,6 +19,7 @@ brew 'wget'
 brew 'zsh-completions'
 brew 'zsh'
 
+cask '1Password'
 cask 'authy'
 cask 'boostnote'
 cask 'brave-browser'
