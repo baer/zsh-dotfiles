@@ -1,9 +1,10 @@
+format = "$all${custom.randomemoji} "
+
 [aws]
 disabled = true
 
 [character]
-success_symbol = "[🐙](bold green) "
-error_symbol = "[💀](bold red) "
+disabled = true
 
 [directory]
 truncate_to_repo = false
@@ -15,3 +16,12 @@ disabled = true
 
 [nodejs]
 format = "using [$symbol$version]($style) "
+
+[custom.randomemoji]
+when = """ return 0 """
+command = """
+  EMOJIS=(🐙 ⚡ 🐱 🙌 🔫 💰 🚓 💥 🏥 💉 💀 🍢 🍝 🍪 🍲 🍨 🍦 🍣 🍛 🍮 🍡 🍕 🍜 🍤 🍟 🍫 🍔) && \
+  
+  # Select a random element from the EMOJIS set
+  echo ${EMOJIS[$RANDOM % ${#EMOJIS[@]}]}
+  """
