@@ -1,3 +1,7 @@
+# baer does dotfiles
+
+This is a fork of Zach Holman's excellent [dotfiles project](https://github.com/holman/dotfiles). For more information, make sure to check it out.
+
 ## topical
 
 Everything's built around topic areas. If you're adding a new area to your
@@ -10,7 +14,7 @@ symlinked without extension into `$HOME` when you run `script/bootstrap`.
 
 A lot of stuff. Seriously, a lot of stuff. Check them out in the file browser
 above and see what components may mesh up with you.
-[Fork it](https://github.com/baer/zsh-dotfiles/fork), remove what you don't
+[Fork it](https://github.com/baer/dotfiles/fork), remove what you don't
 use, and build on what you do use.
 
 ## components
@@ -19,7 +23,6 @@ There's a few special files in the hierarchy.
 
 - **bin/**: Anything in `bin/` will get added to your `$PATH` and be made
   available everywhere.
-- **Brewfile**: This is a list of applications for [Homebrew Cask](http://caskroom.io) to install: things like Chrome and 1Password and Adium and stuff. Might want to edit this file before running any initial setup.
 - **topic/\*.zsh**: Any files ending in `.zsh` get loaded into your
   environment.
 - **topic/path.zsh**: Any file named `path.zsh` is loaded first and is
@@ -37,9 +40,10 @@ There's a few special files in the hierarchy.
 Run this:
 
 ```sh
-git clone https://github.com/baer/zsh-dotfiles.git ~/.dotfiles
+git clone https://github.com/holman/dotfiles.git ~/.dotfiles
 cd ~/.dotfiles
 script/bootstrap
+brew bundle
 ```
 
 This will symlink the appropriate files in `.dotfiles` to your home directory.
