@@ -10,7 +10,7 @@
         wtf  = !$DOTFILES/bin/git-wtf
 
         # Delete all local branches that have been merged into HEAD
-        dall = branch -d `git branch --merged | grep -v '^*' | grep -v 'master' | tr -d '\n'`
+        dall = branch -d `git branch --merged | grep -v '^*' | grep -v 'main' | tr -d '\n'`
 
         # shortcuts
         a  = add -A .
@@ -24,7 +24,7 @@
         sdiff = diff --shortstat
         ndiff = diff --name-status
         count = !git shortlog -sn
-        cdiff = "!sh -c ' git log --left-right --graph --cherry-pick --oneline master...$(git describe --abbrev=0 --tags)'"
+        cdiff = "!sh -c ' git log --left-right --graph --cherry-pick --oneline main...$(git describe --abbrev=0 --tags)'"
 
         # Logs
         plog  = log --graph --pretty=format:'%Cred%h%Creset %an: %s - %Creset %C(yellow)%d%Creset %Cgreen(%cr)%Creset' --abbrev-commit --date=relative
@@ -32,9 +32,9 @@
         blog  = log --graph --decorate --pretty=oneline --abbrev-commit
 
         # Pull/Push
-        pm  = pull origin master
+        pm  = pull origin main
         pd  = pull origin develop
-        pum = push origin master
+        pum = push origin main
         pud = push origin develop
 
         # Safeguards
@@ -100,9 +100,9 @@
 [mergetool]
         keepBackup = false
 
-[branch "master"]
+[branch "main"]
         remote = origin
-        merge = refs/heads/master
+        merge = refs/heads/main
 
 [difftool]
         prompt = false
@@ -118,3 +118,5 @@
         default = simple
 [credential]
 	helper = osxkeychain
+[init]
+	defaultBranch = main
