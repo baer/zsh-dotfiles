@@ -1,1 +1,1 @@
-export EDITOR='zed'
+export EDITOR='code'

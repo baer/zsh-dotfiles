@@ -11,7 +11,7 @@ Personal zsh dotfiles using topical organization (fork of holman/dotfiles).
 3. `*/*.zsh` (excluding path.zsh and completion.zsh) -- alphabetical by directory, then filename
 4. `*/completion.zsh` -- loaded after `compinit`
 
-**Alphabetical ordering is load-bearing.** Topics load by directory name, so `system/` always loads after `editors/`. This means `system/env.zsh` (EDITOR='code') intentionally overrides `editors/env.zsh` (EDITOR='zed'). The final EDITOR value 'code' is correct.
+**Alphabetical ordering is load-bearing.** Topics load by directory name, so `system/` always loads after `editors/`. If two topics set the same variable, the later directory wins.
 
 ## Commands
 

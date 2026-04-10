@@ -3,7 +3,7 @@
 Key points:
 
 - `*.symlink` files are LIVE-SYMLINKED to `$HOME/.{name}`. Edits take effect immediately.
-- Source order is alphabetical by topic directory. `system/` overrides `editors/` for same-named vars (intentional).
+- Source order is alphabetical by topic directory. Later directories override earlier ones for same-named vars.
 - `git rebase` is aliased to `git rebase -i` (interactive). Do not use non-interactively.
 - Brewfile order: taps, then brews, then casks. Alphabetical within each section.
 - Verify changes: `reload!` or `zsh -n <file>` for syntax check.

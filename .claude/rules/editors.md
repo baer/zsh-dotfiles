@@ -2,4 +2,4 @@
 globs: ["editors/*"]
 ---
 
-- `editors/env.zsh` sets EDITOR='zed' but `system/env.zsh` overrides it to 'code' (alphabetical topic load order). To change the final EDITOR, edit `system/env.zsh`, not this directory.
+- EDITOR is set to 'code' (VS Code) in `editors/env.zsh`. The `e` and `ee` commands in `bin/` use $EDITOR (`ee` adds `--wait` for interactive use).
