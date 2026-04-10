@@ -1,28 +1,13 @@
-# zsh-dotfiles
+# Claude-Specific Context
 
-Personal zsh dotfiles using topical organization (fork of holman/dotfiles).
+See AGENTS.md for architecture, commands, file conventions, and gotchas.
 
-## Commands
+## Hooks
 
-- `script/bootstrap` — initial setup (symlinks dotfiles, configures git)
-- `bin/dot` — update environment (brew update/upgrade, run install scripts)
-- `brew bundle` — install Brewfile packages
-- `reload!` — re-source ~/.zshrc
-- `source ~/.zshrc` — same as reload!, works outside zsh
+- **Symlink warning**: A PostToolUse hook warns when you edit `*.symlink` files, since they're live-symlinked to $HOME.
+- **Rebase block**: A PreToolUse hook blocks `git rebase` commands (aliased to interactive mode in this repo).
 
-## File Conventions
+## Skills
 
-- `*.zsh` — auto-sourced into shell environment
-- `*.symlink` — symlinked to `$HOME/.{name}` (stripping `.symlink` extension)
-- `path.zsh` — loaded first (PATH setup)
-- `completion.zsh` — loaded last (after compinit)
-- `install.sh` — executed by `script/install`
-
-## Gotchas
-
-- **EDITOR override is intentional**: `editors/env.zsh` sets EDITOR='zed', then `system/env.zsh` overrides to EDITOR='code'. This happens because topics load alphabetically. The final value 'code' is correct.
-- **git rebase is interactive**: `git/gitconfig.symlink` aliases `rebase = rebase -i`. Never call `git rebase` expecting non-interactive behavior.
-- **Windsurf path bug**: `editors/windsurf.zsh` hardcodes `/Users/holman/` instead of `$HOME`. Known issue.
-- **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
-- **No tests or linters**: Verify changes with `reload!` or open a new shell.
-- **Symlinks affect $HOME**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
+- `/add-brew-package [name]` -- add a package to the Brewfile with correct section and alphabetical ordering
+- `/new-topic [name]` -- scaffold a new topic directory with standard file conventions
