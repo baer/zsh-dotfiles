@@ -1,2 +1,2 @@
 # Export globally installed npm scripts
-export PATH="$(brew --prefix)/share/npm/bin:$PATH"
+export PATH="$HOMEBREW_PREFIX/share/npm/bin:$PATH"

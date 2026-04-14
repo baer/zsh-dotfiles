@@ -1,1 +1,2 @@
-export PATH="/opt/homebrew/bin:$PATH"
+export HOMEBREW_PREFIX="/opt/homebrew"
+export PATH="$HOMEBREW_PREFIX/bin:$PATH"
