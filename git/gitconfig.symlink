@@ -89,7 +89,6 @@
 [core]
         attributesfile = ~/.gitattributes
         excludesfile = ~/.gitignore
-        excludesfile = ~/.gitignore
         editor = vim
         ignorecase = false
 

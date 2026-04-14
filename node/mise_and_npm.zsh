@@ -6,5 +6,7 @@ if [[ -z "$_GUSTO_CONFIG_FILES_INITIALIZED" ]]; then
   fi
 fi
 
-# Semver is aspirational...
-npm config set save-exact true
+# Semver is aspirational — set once, not every shell startup
+if command -v npm &>/dev/null && [[ "$(npm config get save-exact 2>/dev/null)" != "true" ]]; then
+  npm config set save-exact true
+fi
