@@ -32,13 +32,17 @@ Personal zsh dotfiles using topical organization (fork of holman/dotfiles).
 
 ## Verification
 
+Automated (PostToolUse hooks run on every Edit/Write):
+- `.zsh` files: `zsh -n` syntax check -- blocks save on failure
+- `bin/*` scripts: `shellcheck` -- blocks save on failure
+- `Brewfile`: alphabetical ordering check -- blocks save on failure
+
+Manual (run after completing changes):
 - `reload!` or `source ~/.zshrc` -- verify shell changes load without errors
-- `zsh -n <file>` -- syntax-check a .zsh file without executing it
-- `brew bundle --no-lock` -- verify Brewfile syntax
+- `brew bundle --no-lock` -- verify Brewfile installs correctly
 
 ## Gotchas
 
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
 - **git rebase is interactive**: `git/gitconfig.symlink` aliases `rebase = rebase -i`. Never call `git rebase` expecting non-interactive behavior.
 - **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
-- **No tests or linters**: Verify changes with `reload!` or `zsh -n`.
