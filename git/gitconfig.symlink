@@ -3,8 +3,8 @@
         path = ~/.gitconfig.local
 
 # Work config — applied to all repos under ~/workspace/
-# This file is created by Gusto's setup.sh or manually
-[includeIf "gitdir:~/workspace/"]
+# Copy git/gitconfig.gusto.example to ~/.gitconfig.gusto (or let Gusto's setup.sh create it)
+[includeIf "gitdir:~/workspace/**/"]
         path = ~/.gitconfig.gusto
 
 [hub]
