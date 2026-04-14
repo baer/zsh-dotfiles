@@ -2,6 +2,11 @@
 [include]
         path = ~/.gitconfig.local
 
+# Work config — applied to all repos under ~/workspace/
+# This file is created by Gusto's setup.sh or manually
+[includeIf "gitdir:~/workspace/"]
+        path = ~/.gitconfig.gusto
+
 [hub]
         protocol = https
 

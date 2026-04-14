@@ -1,0 +1,4 @@
+[user]
+    email = eric.baer@gusto.com
+[credential]
+    helper = osxkeychain

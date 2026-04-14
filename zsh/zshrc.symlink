@@ -40,6 +40,11 @@ done
 
 unset config_files
 
+# Work environment (Gusto)
+if [[ -f ~/.gusto/init.sh ]]; then
+  source ~/.gusto/init.sh
+fi
+
 # Better history
 # Credits to https://coderwall.com/p/jpj_6q/zsh-better-history-searching-with-arrow-keys
 autoload -U up-line-or-beginning-search
