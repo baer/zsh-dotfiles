@@ -8,8 +8,9 @@ A fork of Zach Holman's excellent [dotfiles project](https://github.com/holman/d
 git clone https://github.com/baer/zsh-dotfiles.git ~/.dotfiles
 cd ~/.dotfiles
 script/bootstrap
-brew bundle
 ```
+
+Bootstrap handles everything: symlinks `*.symlink` files to `$HOME`, configures git, detects company-managed apps, and installs Homebrew packages.
 
 ## Topical Organization
 
@@ -30,9 +31,15 @@ Everything's built around topic areas. Each directory is a "topic" — add a `ja
 
 ## Day-to-Day
 
-- `bin/dot` — Update environment (brew update/upgrade, run install scripts)
-- `brew bundle` — Install Brewfile packages
+- `dot` — Update environment (brew update/upgrade, install Brewfile packages, run install scripts)
 - `reload!` — Re-source ~/.zshrc
+- `dot -e` — Open dotfiles directory in your editor
+
+## Work Machines
+
+On company machines where MDM or Chef manages apps like 1Password, Chrome, or Zoom, `script/bootstrap` automatically detects these and skips them during Homebrew installs. It checks `/Applications` and system package receipts, then stores the skip list in `~/.localrc`.
+
+If managed apps change later, re-run: `script/brew-skip-detect`
 
 ## For AI Agents
 

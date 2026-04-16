@@ -1,7 +1,14 @@
 cask_args appdir: '/Applications'
 
-tap 'homebrew/bundle'
-tap 'homebrew/cask-fonts'
+# Load cask skip list from ~/.localrc if not already in environment
+if ENV['HOMEBREW_BUNDLE_CASK_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_CASK_SKIP'].empty?
+  localrc = File.expand_path('~/.localrc')
+  if File.exist?(localrc)
+    File.read(localrc).match(/^export HOMEBREW_BUNDLE_CASK_SKIP="([^"]*)"/) do |m|
+      ENV['HOMEBREW_BUNDLE_CASK_SKIP'] = m[1]
+    end
+  end
+end
 
 brew 'ack'
 brew 'atuin'

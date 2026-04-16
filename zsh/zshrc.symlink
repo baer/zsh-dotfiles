@@ -1,5 +1,7 @@
 # shortcut to this dotfiles path is $ZSH
-export ZSH=$HOME/.dotfiles
+# ~/.zshrc is symlinked to <repo>/zsh/zshrc.symlink by script/bootstrap.
+# Resolve that symlink to find the repo root: resolve -> parent -> parent.
+export ZSH="${${:-$HOME/.zshrc}:A:h:h}"
 
 # your project folder that we can `c [tab]` to
 export PROJECTS=~/dev

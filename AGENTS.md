@@ -15,9 +15,9 @@ Personal zsh dotfiles using topical organization (fork of holman/dotfiles).
 
 ## Commands
 
-- `script/bootstrap` -- initial setup (creates symlinks to $HOME, configures git, runs dot)
-- `bin/dot` -- ongoing maintenance (brew update/upgrade, runs topic install scripts)
-- `brew bundle` -- install Brewfile packages
+- `script/bootstrap` -- initial setup (creates symlinks to $HOME, configures git, detects company-managed casks, runs dot)
+- `script/brew-skip-detect` -- detects casks installed outside Homebrew, writes skip list to `~/.localrc`
+- `bin/dot` -- ongoing maintenance (brew update/upgrade, brew bundle, runs topic install scripts)
 - `reload!` -- re-source ~/.zshrc
 - `source ~/.zshrc` -- same as reload!, works outside zsh
 
