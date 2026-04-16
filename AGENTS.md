@@ -41,6 +41,15 @@ Manual (run after completing changes):
 - `reload!` or `source ~/.zshrc` -- verify shell changes load without errors
 - `brew bundle --no-lock` -- verify Brewfile installs correctly
 
+## Work Machines
+
+The Brewfile is the canonical list of all desired packages. On work machines where company MDM/Chef manages some apps, `HOMEBREW_BUNDLE_CASK_SKIP` tells `brew bundle` which casks to skip.
+
+- `script/brew-skip-detect` auto-detects casks already installed outside Homebrew and writes the skip list to `~/.localrc`
+- `script/bootstrap` runs detection automatically before installing dependencies
+- `bin/dot` prints a reminder if on a Gusto machine without the skip var set
+- Re-run `script/brew-skip-detect` if managed apps change
+
 ## Gotchas
 
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).

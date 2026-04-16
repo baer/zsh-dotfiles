@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+#
+# brew-skip-detect
+#
+# Detects Brewfile casks that are already installed outside of Homebrew
+# (e.g., by company MDM, Chef, or manual download) and offers to set
+# HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc so `brew bundle` skips them.
+
+set -e
+
+cd "$(dirname "$0")/.."
+DOTFILES_ROOT=$(pwd -P)
+
+info () {
+  printf "\r  [ \033[00;34m..\033[0m ] %s\n" "$1"
+}
+
+user () {
+  printf "\r  [ \033[0;33m??\033[0m ] %s\n" "$1"
+}
+
+success () {
+  printf "\r\033[2K  [ \033[00;32mOK\033[0m ] %s\n" "$1"
+}
+
+# Collect cask tokens from Brewfile
+brewfile_casks=()
+while IFS= read -r cask; do
+  brewfile_casks+=("$cask")
+done < <(grep "^cask '" "$DOTFILES_ROOT/Brewfile" | awk -F"'" '{print $2}')
+
+if [ ${#brewfile_casks[@]} -eq 0 ]; then
+  info "No casks found in Brewfile"
+  exit 0
+fi
+
+# Get currently brew-managed casks
+brew_managed=$(brew list --cask 2>/dev/null || true)
+
+# Filter to only casks not managed by Homebrew
+unmanaged_casks=()
+for cask in "${brewfile_casks[@]}"; do
+  if ! echo "$brew_managed" | grep -qx "$cask"; then
+    unmanaged_casks+=("$cask")
+  fi
+done
+
+if [ ${#unmanaged_casks[@]} -eq 0 ]; then
+  info "All Brewfile casks are already managed by Homebrew"
+  exit 0
+fi
+
+# Query brew for app artifact names in a single batch call, then detect
+# which apps are already present on disk via a non-Homebrew install.
+info "Checking ${#unmanaged_casks[@]} casks not managed by Homebrew..."
+
+skip_casks=()
+skip_details=()
+
+for cask in "${unmanaged_casks[@]}"; do
+  # Ask brew for this cask's artifact metadata
+  json=$(brew info --cask --json=v2 "$cask" 2>/dev/null || true)
+  [ -z "$json" ] && continue
+
+  found_app=""
+
+  # Strategy 1: Check 'app' artifacts in /Applications
+  while IFS= read -r app; do
+    [ -z "$app" ] && continue
+    if [ -d "/Applications/$app" ]; then
+      found_app="$app"
+      break
+    fi
+  done < <(echo "$json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for cask in data.get('casks', []):
+    for art in cask.get('artifacts', []):
+        if isinstance(art, dict) and 'app' in art:
+            for a in art['app']:
+                if isinstance(a, str):
+                    print(a)
+" 2>/dev/null)
+
+  # Strategy 2: Check 'uninstall.delete' paths in /Applications
+  if [ -z "$found_app" ]; then
+    while IFS= read -r app_path; do
+      [ -z "$app_path" ] && continue
+      if [ -d "$app_path" ]; then
+        found_app="$(basename "$app_path")"
+        break
+      fi
+    done < <(echo "$json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for cask in data.get('casks', []):
+    for art in cask.get('artifacts', []):
+        if isinstance(art, dict) and 'uninstall' in art:
+            for u in art['uninstall']:
+                for path in u.get('delete', []):
+                    if path.startswith('/Applications/') and path.endswith('.app'):
+                        print(path)
+" 2>/dev/null)
+  fi
+
+  # Strategy 3: Check pkgutil receipts for pkg-based casks
+  if [ -z "$found_app" ]; then
+    while IFS= read -r pkg_id; do
+      [ -z "$pkg_id" ] && continue
+      if pkgutil --pkg-info "$pkg_id" &>/dev/null; then
+        found_app="(pkg: $pkg_id)"
+        break
+      fi
+    done < <(echo "$json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for cask in data.get('casks', []):
+    for art in cask.get('artifacts', []):
+        if isinstance(art, dict) and 'uninstall' in art:
+            for u in art['uninstall']:
+                pkg = u.get('pkgutil', '')
+                if isinstance(pkg, str) and pkg:
+                    print(pkg)
+                elif isinstance(pkg, list):
+                    for p in pkg:
+                        print(p)
+" 2>/dev/null)
+  fi
+
+  if [ -n "$found_app" ]; then
+    skip_casks+=("$cask")
+    skip_details+=("$cask ($found_app)")
+  fi
+done
+
+if [ ${#skip_casks[@]} -eq 0 ]; then
+  info "No externally installed casks detected"
+  exit 0
+fi
+
+# Present results
+echo ""
+info "Found ${#skip_casks[@]} casks already installed outside Homebrew:"
+for detail in "${skip_details[@]}"; do
+  printf "           %s\n" "$detail"
+done
+echo ""
+
+user "Add these to HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc? [Y/n/e]"
+printf "           Y = yes, n = no, e = edit list first\n"
+printf "           > "
+read -r response
+
+case "$response" in
+  n|N)
+    info "Skipped — no changes made"
+    exit 0
+    ;;
+  e|E)
+    # Let user edit the list
+    skip_line="${skip_casks[*]}"
+    user "Current list (space-separated, edit and press Enter):"
+    printf "           > "
+    read -r -e -i "$skip_line" edited_line
+    skip_line="$edited_line"
+    ;;
+  *)
+    skip_line="${skip_casks[*]}"
+    ;;
+esac
+
+# Write to ~/.localrc
+localrc="$HOME/.localrc"
+export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
+
+if [ -f "$localrc" ] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
+  # Update existing line
+  sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|$export_line|" "$localrc"
+  success "Updated HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc"
+else
+  # Append
+  echo "" >> "$localrc"
+  echo "# Casks to skip in brew bundle (installed outside Homebrew)" >> "$localrc"
+  echo "$export_line" >> "$localrc"
+  success "Added HOMEBREW_BUNDLE_CASK_SKIP to ~/.localrc"
+fi
+
+# Export for current session
+export HOMEBREW_BUNDLE_CASK_SKIP="$skip_line"

@@ -50,6 +50,15 @@ brew update
 echo "› brew upgrade"
 brew upgrade
 
+# Remind work machine users to configure cask skip list
+if [ -f "$HOME/.gusto/init.sh" ] && [ -z "$HOMEBREW_BUNDLE_CASK_SKIP" ]; then
+  echo "› Tip: Run 'script/brew-skip-detect' to skip company-managed casks."
+fi
+
+# Install Brewfile packages
+echo "› brew bundle"
+brew bundle --file="$dotfilesDirectory/Brewfile" --no-lock
+
 # Install software
 echo "› script/install"
 $ZSH/script/install
