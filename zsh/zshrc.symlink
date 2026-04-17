@@ -37,7 +37,11 @@ done
 
 # initialize autocomplete here, otherwise functions won't be loaded
 autoload -U compinit
-compinit
+if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
 
 # load every completion after autocomplete loads
 for file in ${(M)config_files:#*/completion.zsh}
@@ -46,11 +50,6 @@ do
 done
 
 unset config_files
-
-# Work environment (Gusto)
-if [[ -f ~/.gusto/init.sh ]]; then
-  source ~/.gusto/init.sh
-fi
 
 # Better history
 # Credits to https://coderwall.com/p/jpj_6q/zsh-better-history-searching-with-arrow-keys
