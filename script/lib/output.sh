@@ -6,6 +6,12 @@
 # Provides colored status output, spinners, box drawing, and prompts.
 # Respects $NO_COLOR (https://no-color.org) and detects TTY.
 
+# Source guard — prevent re-sourcing from wiping phase state
+if [[ -n "${_OUTPUT_SH_LOADED:-}" ]]; then
+  return 0 2>/dev/null || true
+fi
+_OUTPUT_SH_LOADED=1
+
 # ---------------------------------------------------------------------------
 # Terminal capability detection
 # ---------------------------------------------------------------------------
@@ -305,6 +311,92 @@ phase_end() {
   _ACTIVE_PHASE_START=0
 }
 
+# End the phase spinner but leave the header line in place (no ✓ yet).
+# Sub-steps will print beneath it. Call phase_resolve() when done.
+phase_end_deferred() {
+  _SUBSTEP_COUNT=0
+  _SUBSTEP_CURSOR_DIRTY=0
+
+  if [[ "$INTERACTIVE" == true ]] && _is_tty; then
+    # Enforce minimum spin duration
+    local elapsed=$((SECONDS - _ACTIVE_PHASE_START))
+    if [[ $elapsed -lt 1 ]]; then
+      sleep "$_PHASE_MIN_SPIN"
+    fi
+
+    # Kill spinner and clear line
+    if [[ -n "${_SPINNER_PID:-}" ]]; then
+      kill "$_SPINNER_PID" 2>/dev/null || true
+      wait "$_SPINNER_PID" 2>/dev/null || true
+      _SPINNER_PID=""
+      printf "\r\e[2K"
+    fi
+    if [[ -n "${_SPINNER_STATUS_FILE:-}" ]]; then
+      rm -f "$_SPINNER_STATUS_FILE"
+      _SPINNER_STATUS_FILE=""
+    fi
+
+    # Print the phase name as a plain header (no status symbol yet)
+    printf "  %s\n" "$_ACTIVE_PHASE_NAME"
+  else
+    # Non-TTY: already printed by phase_start, nothing to do
+    :
+  fi
+}
+
+# Mark the substep cursor as dirty — call this when untracked lines are
+# printed between phase_end_deferred and phase_resolve (e.g. interactive
+# prompts). phase_resolve will skip cursor rewrite and print at current
+# position instead.
+substep_mark_dirty() { _SUBSTEP_CURSOR_DIRTY=1; }
+
+# Rewrite the deferred phase header with final status and timing.
+# Must be called after all sub-steps have printed.
+phase_resolve() {
+  local status="$1" detail="$2"
+  local name="$_ACTIVE_PHASE_NAME"
+  local timing
+  timing="$(_phase_timer_elapsed "$name")"
+
+  local sym
+  case "$status" in
+    ok)   sym="$_CHECK" ;;
+    fail) sym="$_CROSS" ;;
+    warn) sym="$_WARN"  ;;
+    skip) sym="$_SKIP"  ;;
+  esac
+
+  if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ "${_SUBSTEP_CURSOR_DIRTY:-0}" -eq 0 ]]; then
+    local lines_to_jump=$_SUBSTEP_COUNT
+
+    # Move cursor up to the header line, clear it, rewrite
+    if [[ $lines_to_jump -gt 0 ]]; then
+      printf "\e[%dA" "$((lines_to_jump + 1))"
+    else
+      printf "\e[1A"
+    fi
+    printf "\e[2K"
+
+    _format_status_row "$sym" "$name" "$detail" "$timing"
+    printf '\n'
+
+    # Move cursor back down to the bottom
+    if [[ $lines_to_jump -gt 0 ]]; then
+      printf "\e[%dB" "$lines_to_jump"
+    fi
+  else
+    # Non-TTY or dirty cursor: print a resolved summary line at current position
+    _format_status_row "$sym" "$name" "$detail" "$timing"
+    printf '\n'
+  fi
+
+  _ACTIVE_PHASE_NAME=""
+  _ACTIVE_PHASE_NUMBER=""
+  _ACTIVE_PHASE_START=0
+  _SUBSTEP_COUNT=0
+  _SUBSTEP_CURSOR_DIRTY=0
+}
+
 # Pause phase spinner for interactive prompts
 phase_pause() {
   if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ -n "${_SPINNER_PID:-}" ]]; then
@@ -588,6 +680,119 @@ _spinner_cleanup() {
     rm -f "$_SPINNER_STATUS_FILE"
     _SPINNER_STATUS_FILE=""
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Sub-step output (indented beneath a phase header)
+# ---------------------------------------------------------------------------
+
+_SUBSTEP_COUNT=0
+
+substep_log_success() { printf "      %s %s\n" "$_CHECK" "$1"; _SUBSTEP_COUNT=$((_SUBSTEP_COUNT + 1)); }
+substep_log_error()   { printf "      %s %s\n" "$_CROSS" "$1" >&2; _SUBSTEP_COUNT=$((_SUBSTEP_COUNT + 1)); }
+substep_log_warn()    { printf "      %s %s\n" "$_WARN"  "$1"; _SUBSTEP_COUNT=$((_SUBSTEP_COUNT + 1)); }
+substep_log_info()    { printf "      %s %s\n" "$_INFO"  "${_DIM}$1${_RST}"; _SUBSTEP_COUNT=$((_SUBSTEP_COUNT + 1)); }
+
+substep_start() {
+  local message="$1"
+
+  # Non-interactive: just print the message, no animation
+  if [[ "$INTERACTIVE" != true ]] || ! _is_tty; then
+    printf "      · %s\n" "$message"
+    _SUBSTEP_COUNT=$((_SUBSTEP_COUNT + 1))
+    return
+  fi
+
+  _SPINNER_STATUS_FILE="$(mktemp "${TMPDIR:-/tmp}/.dotfiles_spinner.XXXXXX")"
+
+  (
+    trap 'exit 0' TERM
+    local i=0
+    while true; do
+      local extra=""
+      if [[ -f "$_SPINNER_STATUS_FILE" ]] && [[ -s "$_SPINNER_STATUS_FILE" ]]; then
+        extra=" ${_DIM}· $(cat "$_SPINNER_STATUS_FILE")${_RST}"
+      fi
+      printf "\r\e[2K      ${_CYAN}%s${_RST} %s%s" "${_SPINNER_FRAMES[$((i % ${#_SPINNER_FRAMES[@]}))]}" "$message" "$extra"
+      i=$((i + 1))
+      sleep 0.08
+    done
+  ) &
+  _SPINNER_PID=$!
+}
+
+substep_stop() {
+  local status="$1" message="$2"
+
+  if [[ -n "$_SPINNER_PID" ]]; then
+    kill "$_SPINNER_PID" 2>/dev/null || true
+    wait "$_SPINNER_PID" 2>/dev/null || true
+    _SPINNER_PID=""
+    printf "\r\e[2K"
+  fi
+
+  if [[ -n "$_SPINNER_STATUS_FILE" ]]; then
+    rm -f "$_SPINNER_STATUS_FILE"
+    _SPINNER_STATUS_FILE=""
+  fi
+
+  case "$status" in
+    ok)   substep_log_success "$message" ;;
+    fail) substep_log_error   "$message" ;;
+    warn) substep_log_warn    "$message" ;;
+    skip) substep_log_info    "$message" ;;
+  esac
+}
+
+run_with_substep_spinner() {
+  local message="$1" logfile="$2"
+  shift 2
+
+  substep_start "$message"
+  if "$@" >> "$logfile" 2>&1; then
+    substep_stop ok "$message"
+    return 0
+  else
+    local rc=$?
+    substep_stop fail "$message (see ${logfile##*/} for details)"
+    return "$rc"
+  fi
+}
+
+run_with_substep_streaming_spinner() {
+  local message="$1" logfile="$2"
+  shift 2
+
+  substep_start "$message"
+
+  local exit_code_file
+  exit_code_file="$(mktemp "${TMPDIR:-/tmp}/.dotfiles_exit.XXXXXX")"
+
+  {
+    "$@" 2>&1 || echo $? > "$exit_code_file"
+  } | while IFS= read -r line; do
+    printf '%s\n' "$line" >> "$logfile"
+    if [[ "$line" =~ ^(Installing|Upgrading|Using)[[:space:]]+(.+)$ ]]; then
+      local pkg="${BASH_REMATCH[2]}"
+      pkg="${pkg%%[[:space:]]*}"
+      if [[ -n "$_SPINNER_STATUS_FILE" ]]; then
+        printf '%s' "${BASH_REMATCH[1],,} ${pkg}" > "$_SPINNER_STATUS_FILE"
+      fi
+    fi
+  done
+
+  local rc=0
+  if [[ -f "$exit_code_file" ]] && [[ -s "$exit_code_file" ]]; then
+    rc="$(cat "$exit_code_file")"
+  fi
+  rm -f "$exit_code_file"
+
+  if [[ $rc -eq 0 ]]; then
+    substep_stop ok "$message"
+  else
+    substep_stop fail "$message (see ${logfile##*/} for details)"
+  fi
+  return "$rc"
 }
 
 # ---------------------------------------------------------------------------
