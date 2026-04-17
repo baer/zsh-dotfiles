@@ -132,11 +132,11 @@ if $DRY_RUN; then
   fi
   log_info "Would link $local_symlinks symlink files"
   if $SKIP_DEPS; then
-    log_skip "Dependencies (--skip-deps)"
+    log_skip "Installing Software (--skip-deps)"
   elif $IS_MACOS; then
     log_info "Would install Homebrew packages"
   else
-    log_skip "Dependencies (not macOS)"
+    log_skip "Installing Software (not macOS)"
   fi
   printf "\n"
   exit 0
@@ -332,22 +332,22 @@ phase_end ok "$_sym_detail"
 summary_add ok "Symlinks" "$_sym_detail" "$(_phase_timer_elapsed "Symlinks")"
 
 # ---------------------------------------------------------------------------
-# Phase 4: Dependencies
+# Phase 4: Installing Software
 # ---------------------------------------------------------------------------
 
-_current_phase="Dependencies"
+_current_phase="Installing Software"
 
 if $SKIP_DEPS; then
-  summary_add skip "Dependencies" "skipped (--skip-deps)" "<1s"
+  summary_add skip "Installing Software" "skipped (--skip-deps)" "<1s"
 elif ! $IS_MACOS; then
-  summary_add skip "Dependencies" "skipped (not macOS)" "<1s"
+  summary_add skip "Installing Software" "skipped (not macOS)" "<1s"
 else
-  _phase_timer_start "Dependencies"
+  _phase_timer_start "Installing Software"
 
   if $VERBOSE; then
-    log_phase "4/4" "Dependencies"
+    log_phase "4/4" "Installing Software"
   else
-    phase_start "4/4" "Dependencies"
+    phase_start "4/4" "Installing Software"
     phase_end_deferred
   fi
 
@@ -370,7 +370,7 @@ else
     fi
   else
     if ! $VERBOSE; then
-      substep_log_success "homebrew"
+      substep_log_success "homebrew ready"
     else
       log_skip "Homebrew already installed"
     fi
@@ -428,9 +428,9 @@ else
 
   if [[ $_install_count -gt 0 ]]; then
     if $VERBOSE; then
-      log_success "$_install_count install scripts run"
+      log_success "install scripts ($_install_count)"
     else
-      substep_log_success "$_install_count install scripts run"
+      substep_log_success "install scripts ($_install_count)"
     fi
   fi
 
@@ -438,5 +438,5 @@ else
     phase_resolve ok "installed"
   fi
 
-  summary_add ok "Dependencies" "installed" "$(_phase_timer_elapsed "Dependencies")"
+  summary_add ok "Installing Software" "installed" "$(_phase_timer_elapsed "Installing Software")"
 fi

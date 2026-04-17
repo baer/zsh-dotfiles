@@ -1,1 +1,0 @@
-# Atuin init moved to zsh/tools.zsh (must load after fzf to keep Ctrl+R binding)

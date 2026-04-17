@@ -336,8 +336,8 @@ phase_end_deferred() {
       _SPINNER_STATUS_FILE=""
     fi
 
-    # Print the phase name as a plain header (no status symbol yet)
-    printf "  %s\n" "$_ACTIVE_PHASE_NAME"
+    # Print the phase name with a static loading indicator
+    printf "  ${_CYAN}%s${_RST} %s\n" "$_BULLET_EMPTY" "$_ACTIVE_PHASE_NAME"
   else
     # Non-TTY: already printed by phase_start, nothing to do
     :
