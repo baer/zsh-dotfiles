@@ -10,7 +10,6 @@ if ENV['HOMEBREW_BUNDLE_CASK_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_CASK_SKIP'].emp
   end
 end
 
-brew 'ack'
 brew 'atuin'
 brew 'awscli'
 brew 'bash'
@@ -29,6 +28,7 @@ brew 'imagemagick'
 brew 'mise'
 brew 'openssl'
 brew 'postgresql@18'
+brew 'ripgrep'
 brew 'spaceman-diff'
 brew 'spark'
 brew 'sqlite'

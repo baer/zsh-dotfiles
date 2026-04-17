@@ -19,7 +19,7 @@
         a  = add -A .
         b  = branch
         c  = commit
-        cb= = copy-branch-name
+        cb = "!git rev-parse --abbrev-ref HEAD | tr -d '\\n' | pbcopy && git rev-parse --abbrev-ref HEAD"
         co = checkout
         s  = status -sb
 
@@ -65,10 +65,11 @@
         # Displays committers in descending order of number of commits
         who = shortlog --numbered --summary --email --no-merges --since="3 months"
 
-        # Scripts
-        promote = !$ZSH/bin/git-promote
-        wtf     = !$ZSH/bin/git-wtf
-        rank-contributors = !$ZSH/bin/git-rank-contributors
+        # Inline helpers (formerly bin/ scripts)
+        undo     = reset --soft HEAD^
+        unpushed = "!git diff origin/$(git rev-parse --abbrev-ref HEAD)..HEAD"
+        promote  = push -u origin HEAD
+        track    = "!git branch --set-upstream-to=origin/$(git rev-parse --abbrev-ref HEAD)"
 
 [color]
         diff = auto
