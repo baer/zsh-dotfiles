@@ -1,6 +1,6 @@
 # zsh-dotfiles
 
-Personal zsh dotfiles using topical organization (fork of holman/dotfiles).
+Personal zsh dotfiles using topical organization
 
 ## Architecture
 

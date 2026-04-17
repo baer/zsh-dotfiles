@@ -7,7 +7,7 @@
 #
 # Examples
 #
-#   git credit "Zach Holman" zach@example.com
+#   git credit "Eric Baer" me@ericbaer.com
 #
 
 [ -z "$1" ] || [ -z "$2" ] && { echo "Usage: git credit \"Name\" email" >&2; exit 1; }
