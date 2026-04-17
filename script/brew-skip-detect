@@ -185,6 +185,11 @@ case "$response" in
     ;;
 esac
 
+# Merge with existing skip list so we don't overwrite previously saved casks
+if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
+  skip_line="$HOMEBREW_BUNDLE_CASK_SKIP $skip_line"
+fi
+
 # Write to ~/.localrc
 localrc="$HOME/.localrc"
 export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
