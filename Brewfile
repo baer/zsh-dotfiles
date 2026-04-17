@@ -39,7 +39,7 @@ brew 'zoxide'
 brew 'zsh'
 brew 'zsh-autosuggestions'
 brew 'zsh-completions'
-brew 'zsh-syntax-highlighting'
+brew 'zsh-fast-syntax-highlighting'
 
 cask '1password'
 cask 'audacity'
