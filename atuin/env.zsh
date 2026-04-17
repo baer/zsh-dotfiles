@@ -1,3 +1,1 @@
-if (( $+commands[atuin] )); then
-  eval "$(atuin init zsh)"
-fi
+# Atuin init moved to zsh/tools.zsh (must load after fzf to keep Ctrl+R binding)

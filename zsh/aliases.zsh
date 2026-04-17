@@ -42,17 +42,20 @@ alias mv='mv -i'
 alias mkdir='mkdir -p'
 
 # ----------------------------------------------------------------------
-# ls less With DIRCOLORS
+# ls / cat replacements
 # ----------------------------------------------------------------------
-# ref: http://ss64.com/osx/ls.html
 
-# grc overides for ls
-#   Made possible through contributions from generous benefactors like
-#   `brew install coreutils`
-if $(gls &>/dev/null)
-then
+if (( $+commands[eza] )); then
+  alias ls="eza -F"
+  alias ll="eza -laF --group-directories-first --sort=extension"
+  alias tree="eza --tree"
+elif $(gls &>/dev/null); then
   alias ls="gls -F --color"
+  alias ll="gls -alF --color --group-directories-first --sort=extension"
 fi
 
-# List all files colorized in long format
-alias ll="ls -alF --group-directories-first --sort=extension"
+if (( $+commands[bat] )); then
+  alias cat="bat --paging=never"
+  export BAT_THEME="ansi"
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi

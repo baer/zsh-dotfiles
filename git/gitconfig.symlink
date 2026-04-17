@@ -91,6 +91,15 @@
         excludesfile = ~/.gitignore
         editor = vim
         ignorecase = false
+        pager = delta
+
+[interactive]
+        diffFilter = delta --color-only
+
+[delta]
+        navigate = true
+        line-numbers = true
+        hyperlinks = true
 
 [apply]
         whitespace = nowarn
@@ -98,6 +107,7 @@
 [merge]
         # Include summaries of merged commits in newly created merge commit messages
         log = true
+        conflictstyle = zdiff3
 
 [mergetool]
         keepBackup = false
