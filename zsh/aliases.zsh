@@ -23,13 +23,13 @@ alias httpdump="sudo tcpdump -i en1 -n -s 0 -w - | grep -a -o -E \"Host\: .*|GET
 alias ip="dig +short myip.opendns.com @resolver1.opendns.com"
 
 # Copy my public key to the pasteboard
-alias pubkey="more ~/.ssh/id_rsa.pub | pbcopy | printf '=> Public key copied to pasteboard.\n'"
+alias pubkey="pbcopy < ~/.ssh/id_ed25519.pub && printf '=> Public key copied to pasteboard.\n'"
 
 # Print the gzipped size of the contents of the clipboard
 alias gsize="pbpaste | gzip | wc -c"
 
 # Update forked repo from upstream
-alias updatefork="git fetch upstream && git checkout master && git rebase upstream/master"
+alias updatefork="git checkout master && git pull upstream master"
 
 # ----------------------------------------------------------------------
 # Safeguards

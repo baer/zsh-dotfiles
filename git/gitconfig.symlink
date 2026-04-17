@@ -13,7 +13,7 @@
 [alias]
         # Display concise repository status
         # Delete all local branches that have been merged into HEAD
-        dall = branch -d `git branch --merged | grep -v '^*' | grep -v 'main' | tr -d '\n'`
+        dall = !git branch --merged | grep -v '^*' | grep -v 'main' | xargs git branch -d
 
         # shortcuts
         a  = add -A .

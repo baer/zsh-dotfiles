@@ -38,7 +38,7 @@ while test $# -gt 0; do
 	shift
 done
 
-export ZSH=$HOME/.dotfiles
+export ZSH="$dotfilesDirectory"
 
 # Install homebrew
 $ZSH/homebrew/install.sh 2>&1

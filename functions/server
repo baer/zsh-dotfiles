@@ -1,12 +1,4 @@
-#!/bin/bash
-
 # Start an HTTP server from a directory, optionally specifying the port
-server() {
-    # Get port (if specified)
-    local port="${1:-8000}"
-
-    # Open in the browser
-    open "http://localhost:${port}/"
-
-    python3 -m http.server "${port}"
-}
+local port="${1:-8000}"
+open "http://localhost:${port}/"
+python3 -m http.server "${port}"
