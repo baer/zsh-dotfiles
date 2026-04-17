@@ -49,7 +49,7 @@ if (( $+commands[eza] )); then
   alias ls="eza -F"
   alias ll="eza -laF --group-directories-first --sort=extension"
   alias tree="eza --tree"
-elif $(gls &>/dev/null); then
+elif (( $+commands[gls] )); then
   alias ls="gls -F --color"
   alias ll="gls -alF --color --group-directories-first --sort=extension"
 fi

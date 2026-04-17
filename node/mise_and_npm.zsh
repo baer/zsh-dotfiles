@@ -7,7 +7,7 @@ if [[ -z "$_GUSTO_CONFIG_FILES_INITIALIZED" ]]; then
 fi
 
 # Semver is aspirational — set once, not every shell startup
-if command -v npm &>/dev/null && [[ ! -f ${XDG_CACHE_HOME:-$HOME/.cache}/npm-save-exact-set ]]; then
+if [[ ! -f ${XDG_CACHE_HOME:-$HOME/.cache}/npm-save-exact-set ]] && command -v npm &>/dev/null; then
   npm config set save-exact true
   mkdir -p ${XDG_CACHE_HOME:-$HOME/.cache}
   touch ${XDG_CACHE_HOME:-$HOME/.cache}/npm-save-exact-set
