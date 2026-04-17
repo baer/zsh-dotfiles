@@ -117,23 +117,9 @@ log_header "$DOTFILES_ROOT"
 # ---------------------------------------------------------------------------
 
 _current_phase="Preflight"
-log_phase "1/4" "Preflight"
-
-if ! command -v git &>/dev/null; then
-  log_error "git is not installed"
-  exit 1
-fi
-log_success "git found"
-
-if $IS_MACOS; then
-  if command -v brew &>/dev/null; then
-    log_success "homebrew found"
-  else
-    log_info "homebrew not found — will install in phase 4"
-  fi
-fi
 
 if $DRY_RUN; then
+  log_phase "1/4" "Preflight"
   log_info "Dry run — previewing changes"
   printf "\n"
 
@@ -156,6 +142,28 @@ if $DRY_RUN; then
   exit 0
 fi
 
+phase_start "1/4" "Preflight"
+
+_preflight_detail=""
+
+phase_update "checking git"
+if ! command -v git &>/dev/null; then
+  phase_end fail "git not found"
+  exit 1
+fi
+_preflight_detail="git ✓"
+
+if $IS_MACOS; then
+  phase_update "checking homebrew"
+  if command -v brew &>/dev/null; then
+    _preflight_detail+="  homebrew ✓"
+  else
+    _preflight_detail+="  homebrew pending"
+  fi
+fi
+
+phase_end ok "$_preflight_detail"
+
 # ---------------------------------------------------------------------------
 # Phase 2: Git config
 # ---------------------------------------------------------------------------
@@ -165,17 +173,19 @@ _current_phase="Git config"
 if $SKIP_GIT; then
   summary_add skip "Git config" "skipped (--skip-git)" "<1s"
 else
-  log_phase "2/4" "Git Config"
+  phase_start "2/4" "Git Config"
 
   gitconfig_local="$DOTFILES_ROOT/git/gitconfig.local.symlink"
 
   if [[ -f "$gitconfig_local" ]]; then
-    log_skip "git/gitconfig.local.symlink already exists"
+    phase_end ok "already configured"
     summary_add ok "Git config" "already configured" "$(_phase_timer_elapsed "Git Config")"
   elif [[ "$INTERACTIVE" != true ]]; then
-    log_warn "Skipping git config — requires interactive terminal"
+    phase_end warn "skipped (non-interactive)"
     summary_add warn "Git config" "skipped (non-interactive)" "$(_phase_timer_elapsed "Git Config")"
   else
+    phase_pause
+
     # Detect defaults from existing global config
     default_name="$(git config --global user.name 2>/dev/null || true)"
     default_email="$(git config --global user.email 2>/dev/null || true)"
@@ -196,7 +206,8 @@ else
         helper = $git_credential
 EOF
 
-    log_success "Created git/gitconfig.local.symlink"
+    phase_resume
+    phase_end ok "configured"
     summary_add ok "Git config" "configured" "$(_phase_timer_elapsed "Git Config")"
   fi
 fi
@@ -206,7 +217,7 @@ fi
 # ---------------------------------------------------------------------------
 
 _current_phase="Symlinks"
-log_phase "3/4" "Symlinks"
+phase_start "3/4" "Symlinks"
 
 _link_count=0
 _skip_count=0
@@ -230,6 +241,8 @@ link_file() {
       if [[ "$current_src" == "$src" ]]; then
         skip=true
       elif [[ "$INTERACTIVE" == true ]]; then
+        phase_pause
+
         printf "\n"
         log_warn "File exists: $dst"
         if [[ -n "$current_src" ]]; then
@@ -255,6 +268,8 @@ link_file() {
             esac
           fi
         fi
+
+        phase_resume
 
         case "$choice" in
           2) overwrite=true ;;
@@ -294,13 +309,14 @@ link_file() {
 for src in "$DOTFILES_ROOT"/*/*.symlink; do
   [[ -e "$src" ]] || continue  # guard against empty glob
   dst="$HOME/.$(basename "${src%.*}")"
+  phase_update "$(basename "${src%.*}")"
   link_file "$src" "$dst"
 done
 
 # Build symlink summary detail
 _sym_parts=()
 [[ $_link_count -gt 0 ]]   && _sym_parts+=("$_link_count linked")
-[[ $_skip_count -gt 0 ]]   && _sym_parts+=("$_skip_count skipped")
+[[ $_skip_count -gt 0 ]]   && _sym_parts+=("$_skip_count already in place")
 [[ $_backup_count -gt 0 ]] && _sym_parts+=("$_backup_count backed up")
 if [[ ${#_sym_parts[@]} -eq 0 ]]; then
   _sym_detail="nothing to do"
@@ -312,13 +328,7 @@ else
   done
 fi
 
-if [[ $_link_count -gt 0 ]]; then
-  log_success "$_link_count symlinks created"
-fi
-if [[ $_skip_count -gt 0 ]]; then
-  log_skip "$_skip_count already in place"
-fi
-
+phase_end ok "$_sym_detail"
 summary_add ok "Symlinks" "$_sym_detail" "$(_phase_timer_elapsed "Symlinks")"
 
 # ---------------------------------------------------------------------------
@@ -332,10 +342,24 @@ if $SKIP_DEPS; then
 elif ! $IS_MACOS; then
   summary_add skip "Dependencies" "skipped (not macOS)" "<1s"
 else
-  log_phase "4/4" "Dependencies"
+  _phase_timer_start "Dependencies"
+
+  if $VERBOSE; then
+    log_phase "4/4" "Dependencies"
+  else
+    # Phase 4 has long-running sub-tasks with their own spinners.
+    # Start a phase spinner briefly to show we're entering this phase,
+    # then end it before the sub-task spinners take over.
+    phase_start "4/4" "Dependencies"
+    phase_update "checking homebrew"
+  fi
 
   # --- Homebrew ---
   if ! command -v brew &>/dev/null; then
+    if ! $VERBOSE; then
+      phase_end ok "installing packages…"
+    fi
+
     if $VERBOSE; then
       log_info "Installing Homebrew..."
       /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -352,7 +376,11 @@ else
       eval "$(/usr/local/bin/brew shellenv)"
     fi
   else
-    log_skip "Homebrew already installed"
+    if ! $VERBOSE; then
+      phase_end ok "homebrew ✓"
+    else
+      log_skip "Homebrew already installed"
+    fi
   fi
 
   # --- Cask skip detection ---

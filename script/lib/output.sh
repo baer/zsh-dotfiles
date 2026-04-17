@@ -154,12 +154,16 @@ log_header() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase tracking with dot-track progress
+# Phase lifecycle (spinner-to-checkmark)
 # ---------------------------------------------------------------------------
 
 declare -A _PHASE_START_TIMES=()
 _PHASE_TOTAL=4
 _PHASE_CURRENT=0
+_ACTIVE_PHASE_NAME=""
+_ACTIVE_PHASE_NUMBER=""
+_ACTIVE_PHASE_START=0
+_PHASE_MIN_SPIN=0.3  # minimum visible spin time in seconds
 
 _phase_timer_start() { _PHASE_START_TIMES["$1"]=$SECONDS; }
 
@@ -173,15 +177,128 @@ _phase_timer_elapsed() {
   fi
 }
 
-log_phase() {
+# Start a phase with a spinner: phase_start "1/4" "Preflight"
+phase_start() {
   local number="$1" name="$2"
 
-  # Parse "1/4" format
   local current total
   IFS='/' read -r current total <<< "$number"
   _PHASE_CURRENT=$current
   _PHASE_TOTAL=$total
+  _ACTIVE_PHASE_NAME="$name"
+  _ACTIVE_PHASE_NUMBER="$number"
 
+  _phase_timer_start "$name"
+
+  if [[ "$INTERACTIVE" != true ]] || ! _is_tty; then
+    printf "  [%s] %s\n" "$number" "$name"
+    return
+  fi
+
+  _ACTIVE_PHASE_START=$SECONDS
+  spinner_start "$name"
+}
+
+# Update spinner status text: phase_update "checking git"
+phase_update() {
+  local text="$1"
+  if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ -n "$_SPINNER_STATUS_FILE" ]] && [[ -n "$_SPINNER_PID" ]]; then
+    printf '%s' "$text" > "$_SPINNER_STATUS_FILE"
+  else
+    log_info "$text"
+  fi
+}
+
+# End a phase: phase_end ok "git ✓  homebrew ✓"
+phase_end() {
+  local status="$1" detail="$2"
+  local name="$_ACTIVE_PHASE_NAME"
+  local timing
+  timing="$(_phase_timer_elapsed "$name")"
+
+  if [[ "$INTERACTIVE" == true ]] && _is_tty; then
+    # Enforce minimum spin duration so there's always visible motion.
+    # SECONDS is integer-resolution, so for sub-second phases we always
+    # sleep the minimum. This guarantees each phase spinner is visible.
+    local elapsed=$((SECONDS - _ACTIVE_PHASE_START))
+    if [[ $elapsed -lt 1 ]]; then
+      sleep "$_PHASE_MIN_SPIN"
+    fi
+
+    # Kill spinner and clear line
+    if [[ -n "${_SPINNER_PID:-}" ]]; then
+      kill "$_SPINNER_PID" 2>/dev/null || true
+      wait "$_SPINNER_PID" 2>/dev/null || true
+      _SPINNER_PID=""
+      printf "\r\e[2K"
+    fi
+    if [[ -n "${_SPINNER_STATUS_FILE:-}" ]]; then
+      rm -f "$_SPINNER_STATUS_FILE"
+      _SPINNER_STATUS_FILE=""
+    fi
+
+    # Print resolved line with status, detail, and timing
+    local sym
+    case "$status" in
+      ok)   sym="$_CHECK" ;;
+      fail) sym="$_CROSS" ;;
+      warn) sym="$_WARN"  ;;
+      skip) sym="$_SKIP"  ;;
+    esac
+
+    # Format: "  ✓ Phase Name          detail text              <1s"
+    local label_padded detail_padded timing_padded
+    label_padded="$(printf '%-20s' "$name")"
+    local detail_max=28
+    if [[ ${#detail} -gt $detail_max ]]; then
+      detail="${detail:0:$((detail_max - 1))}…"
+    fi
+    detail_padded="$(printf '%-*s' "$detail_max" "$detail")"
+    timing_padded="$(printf '%5s' "$timing")"
+
+    printf "  %s %s${_DIM}%s %s${_RST}\n" "$sym" "$label_padded" "$detail_padded" "$timing_padded"
+  else
+    # Non-TTY: simple output
+    local sym_text
+    case "$status" in
+      ok)   sym_text="$_CHECK" ;;
+      fail) sym_text="$_CROSS" ;;
+      warn) sym_text="$_WARN"  ;;
+      skip) sym_text="$_SKIP"  ;;
+    esac
+    printf "  %s %s — %s  %s\n" "$sym_text" "$name" "$detail" "$timing"
+  fi
+
+  _ACTIVE_PHASE_NAME=""
+  _ACTIVE_PHASE_NUMBER=""
+  _ACTIVE_PHASE_START=0
+}
+
+# Pause phase spinner for interactive prompts
+phase_pause() {
+  if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ -n "${_SPINNER_PID:-}" ]]; then
+    kill "$_SPINNER_PID" 2>/dev/null || true
+    wait "$_SPINNER_PID" 2>/dev/null || true
+    _SPINNER_PID=""
+    printf "\r\e[2K"
+    # Keep _SPINNER_STATUS_FILE and _ACTIVE_PHASE_* intact for resume
+  fi
+}
+
+# Resume phase spinner after prompts
+phase_resume() {
+  if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ -n "$_ACTIVE_PHASE_NAME" ]]; then
+    spinner_start "$_ACTIVE_PHASE_NAME"
+  fi
+}
+
+# Legacy compat — log_phase still works for --verbose / --dry-run paths
+log_phase() {
+  local number="$1" name="$2"
+  local current total
+  IFS='/' read -r current total <<< "$number"
+  _PHASE_CURRENT=$current
+  _PHASE_TOTAL=$total
   _phase_timer_start "$name"
 
   if [[ "$INTERACTIVE" != true ]] || ! _is_tty; then
@@ -189,18 +306,7 @@ log_phase() {
     return
   fi
 
-  # Build dot track
-  local dots=""
-  local i
-  for ((i=1; i<=total; i++)); do
-    if [[ $i -le $current ]]; then
-      dots+="${_CYAN}${_BULLET}${_RST} "
-    else
-      dots+="${_DIM}${_BULLET_EMPTY}${_RST} "
-    fi
-  done
-
-  printf "\n  %s ${_BOLD}%s${_RST}\n\n" "$dots" "$name"
+  printf "\n  ${_BOLD}%s${_RST}\n\n" "$name"
 }
 
 # ---------------------------------------------------------------------------
