@@ -57,7 +57,7 @@ if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
     fi
   done
   if [ ${#filtered_casks[@]} -eq 0 ]; then
-    log_success "All detected casks already in skip list"
+    log_info "All detected casks already in skip list"
     return 0
   fi
   unmanaged_casks=("${filtered_casks[@]}")

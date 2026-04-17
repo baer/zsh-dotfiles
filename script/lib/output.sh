@@ -95,6 +95,45 @@ _draw_box_row() {
 }
 
 # ---------------------------------------------------------------------------
+# Column formatting (shared by phase_end and log_summary_box)
+# ---------------------------------------------------------------------------
+
+# Column widths for status rows
+_COL_LABEL=20
+_COL_DETAIL=28
+_COL_TIMING=5
+
+# _pad_to_width width string
+# Like printf '%-Ns' but pads by visible character count, not byte count.
+# This matters for multi-byte UTF-8 characters (e.g. ✓) and ANSI escapes.
+_pad_to_width() {
+  local target_w="$1" str="$2"
+  local stripped
+  stripped="$(printf '%s' "$str" | sed $'s/\e\\[[0-9;]*m//g')"
+  local visible_len=${#stripped}
+  local pad=$((target_w - visible_len))
+  if [[ $pad -gt 0 ]]; then
+    printf '%s%*s' "$str" "$pad" ""
+  else
+    printf '%s' "$str"
+  fi
+}
+
+# _format_status_row sym label detail timing
+# Returns the formatted string (no trailing newline).
+_format_status_row() {
+  local sym="$1" label="$2" detail="$3" timing="$4"
+  local label_padded detail_padded timing_padded
+  label_padded="$(_pad_to_width "$_COL_LABEL" "$label")"
+  if [[ ${#detail} -gt $_COL_DETAIL ]]; then
+    detail="${detail:0:$((_COL_DETAIL - 1))}…"
+  fi
+  detail_padded="$(_pad_to_width "$_COL_DETAIL" "$detail")"
+  timing_padded="$(printf '%*s' "$_COL_TIMING" "$timing")"
+  printf '%s' "  ${sym} ${label_padded}${_DIM}${detail_padded} ${timing_padded}${_RST}"
+}
+
+# ---------------------------------------------------------------------------
 # Status output
 # ---------------------------------------------------------------------------
 
@@ -247,16 +286,8 @@ phase_end() {
     esac
 
     # Format: "  ✓ Phase Name          detail text              <1s"
-    local label_padded detail_padded timing_padded
-    label_padded="$(printf '%-20s' "$name")"
-    local detail_max=28
-    if [[ ${#detail} -gt $detail_max ]]; then
-      detail="${detail:0:$((detail_max - 1))}…"
-    fi
-    detail_padded="$(printf '%-*s' "$detail_max" "$detail")"
-    timing_padded="$(printf '%5s' "$timing")"
-
-    printf "  %s %s${_DIM}%s %s${_RST}\n" "$sym" "$label_padded" "$detail_padded" "$timing_padded"
+    _format_status_row "$sym" "$name" "$detail" "$timing"
+    printf '\n'
   else
     # Non-TTY: simple output
     local sym_text
@@ -336,10 +367,9 @@ log_summary_box() {
     return
   fi
 
-  # Layout: │ LL sym LL label(16) LL detail(flexible) LL timing(5) LL │
-  # LL = literal spaces. Fixed columns: margins(2+2) + sym(1) + gaps(3) + label(16) + timing(5) = 29
-  # So detail_space = w - 29
-  local w=50
+  # Layout uses shared column constants from _format_status_row:
+  # │ margin(2) sym(1) gap(1) label(_COL_LABEL) detail(_COL_DETAIL) gap(1) timing(_COL_TIMING) margin(2) │
+  local w=$(( 2 + 1 + 1 + _COL_LABEL + _COL_DETAIL + 1 + _COL_TIMING + 2 ))
 
   # Header: "  Summary" left, total_time right
   local header_left="  ${_BOLD}Summary${_RST}"
@@ -357,7 +387,6 @@ log_summary_box() {
   _draw_box_divider $w
 
   # Data rows
-  local detail_space=$((w - 29))
   local idx
   for idx in "${!_statuses[@]}"; do
     local sym
@@ -372,21 +401,21 @@ log_summary_box() {
     local detail="${_details[$idx]}"
     local timing="${_timings[$idx]}"
 
-    # Pad each column
+    # Pad each column using shared widths
     local label_padded
-    label_padded="$(printf '%-16s' "$label")"
-    if [[ ${#detail} -gt $detail_space ]]; then
-      detail="${detail:0:$((detail_space - 1))}…"
+    label_padded="$(_pad_to_width "$_COL_LABEL" "$label")"
+    if [[ ${#detail} -gt $_COL_DETAIL ]]; then
+      detail="${detail:0:$((_COL_DETAIL - 1))}…"
     fi
     local detail_padded
-    detail_padded="$(printf '%-*s' "$detail_space" "$detail")"
+    detail_padded="$(_pad_to_width "$_COL_DETAIL" "$detail")"
     local timing_padded
-    timing_padded="$(printf '%5s' "$timing")"
+    timing_padded="$(printf '%*s' "$_COL_TIMING" "$timing")"
 
     local row_content
     case "${_statuses[$idx]}" in
-      skip) row_content="  ${sym}  ${_DIM}${label_padded}${detail_padded} ${timing_padded}${_RST}  " ;;
-      *)    row_content="  ${sym}  ${label_padded}${detail_padded} ${_DIM}${timing_padded}${_RST}  " ;;
+      skip) row_content="  ${sym} ${_DIM}${label_padded}${detail_padded} ${timing_padded}${_RST}  " ;;
+      *)    row_content="  ${sym} ${label_padded}${detail_padded} ${_DIM}${timing_padded}${_RST}  " ;;
     esac
 
     _draw_box_row $w "$row_content"
