@@ -142,8 +142,13 @@ if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
       new_skip_details+=("${skip_details[$i]}")
     fi
   done
-  skip_casks=("${new_skip_casks[@]+"${new_skip_casks[@]}"}")
-  skip_details=("${new_skip_details[@]+"${new_skip_details[@]}"}")
+  if [ ${#new_skip_casks[@]} -gt 0 ]; then
+    skip_casks=("${new_skip_casks[@]}")
+    skip_details=("${new_skip_details[@]}")
+  else
+    skip_casks=()
+    skip_details=()
+  fi
 fi
 
 if [ ${#skip_casks[@]} -eq 0 ]; then
