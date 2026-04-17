@@ -68,6 +68,7 @@
         # Inline helpers (formerly bin/ scripts)
         undo     = reset --soft HEAD^
         unpushed = "!git diff origin/$(git rev-parse --abbrev-ref HEAD)..HEAD"
+        unpushed-stat = "!f() { b=$(git rev-parse --abbrev-ref HEAD); c=$(git rev-list --count origin/$b..HEAD); git diff --stat origin/$b..HEAD; echo \" $c commit$( [ $c -eq 1 ] || echo s) total\"; }; f"
         promote  = push -u origin HEAD
         track    = "!git branch --set-upstream-to=origin/$(git rev-parse --abbrev-ref HEAD)"
 

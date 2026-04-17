@@ -13,7 +13,6 @@ end
 brew 'atuin'
 brew 'awscli'
 brew 'bash'
-brew 'bash-completion'
 brew 'bat'
 brew 'btop'
 brew 'cloudflared'
