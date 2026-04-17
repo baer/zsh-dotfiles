@@ -1,0 +1,4 @@
+- `claude/CLAUDE.md` is symlinked to `~/.claude/CLAUDE.md` — your personal Claude Code instructions across all projects.
+- `claude/install.sh` creates the symlink (following the ghostty pattern).
+- `~/.claude/settings.json` is NOT managed here — it contains work-specific plugins and env vars that vary by machine.
+- `~/.claude/policy-limits.json` is enterprise-managed, never edit or dotfile it.
