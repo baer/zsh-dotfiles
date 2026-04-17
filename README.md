@@ -23,7 +23,7 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 
 ### Current Topics
 
-`atuin` `bin` `editors` `functions` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
+`atuin` `bin` `claude` `editors` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
 
 ### File Conventions
 
@@ -32,7 +32,7 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 | `topic/*.zsh` | Auto-sourced into shell (alphabetically by topic, then filename) |
 | `topic/path.zsh` | Loaded **first** across all topics (PATH setup) |
 | `topic/completion.zsh` | Loaded **last**, after `compinit` |
-| `topic/install.sh` | Run by `script/install` (`.sh` extension prevents auto-sourcing) |
+| `topic/install.sh` | Run by `script/bootstrap` (`.sh` extension prevents auto-sourcing) |
 | `topic/*.symlink` | Symlinked to `$HOME/.{name}` by `script/bootstrap` — edits are live |
 | `bin/*` | Added to `$PATH`, available everywhere |
 

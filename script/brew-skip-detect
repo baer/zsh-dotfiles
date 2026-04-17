@@ -18,8 +18,8 @@ source "$DOTFILES_ROOT/script/lib/output.sh"
 # shellcheck disable=SC1091
 [[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
 
-# When sourced from bootstrap, use return instead of exit
-_exit_or_return() { return "${1:-0}"; }
+# Wrap body in a function so early returns actually stop execution when sourced
+_brew_skip_detect_main() {
 
 # Collect cask tokens from Brewfile
 brewfile_casks=()
@@ -29,7 +29,7 @@ done < <(grep "^cask '" "$DOTFILES_ROOT/Brewfile" | awk -F"'" '{print $2}')
 
 if [ ${#brewfile_casks[@]} -eq 0 ]; then
   log_info "No casks found in Brewfile"
-  _exit_or_return 0
+  return 0
 fi
 
 # Get currently brew-managed casks
@@ -45,7 +45,22 @@ done
 
 if [ ${#unmanaged_casks[@]} -eq 0 ]; then
   log_info "All Brewfile casks are already managed by Homebrew"
-  _exit_or_return 0
+  return 0
+fi
+
+# Filter out casks already in the skip list before expensive detection
+if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
+  filtered_casks=()
+  for cask in "${unmanaged_casks[@]}"; do
+    if ! echo " $HOMEBREW_BUNDLE_CASK_SKIP " | grep -q " $cask "; then
+      filtered_casks+=("$cask")
+    fi
+  done
+  if [ ${#filtered_casks[@]} -eq 0 ]; then
+    log_success "All detected casks already in skip list"
+    return 0
+  fi
+  unmanaged_casks=("${filtered_casks[@]}")
 fi
 
 # Query brew for app artifact names in a single batch call, then detect
@@ -131,28 +146,8 @@ for cask in data.get('casks', []):
   fi
 done
 
-# Filter out casks already in the skip list
-if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
-  new_skip_casks=()
-  new_skip_details=()
-  for i in "${!skip_casks[@]}"; do
-    cask="${skip_casks[$i]}"
-    if ! echo " $HOMEBREW_BUNDLE_CASK_SKIP " | grep -q " $cask "; then
-      new_skip_casks+=("$cask")
-      new_skip_details+=("${skip_details[$i]}")
-    fi
-  done
-  if [ ${#new_skip_casks[@]} -gt 0 ]; then
-    skip_casks=("${new_skip_casks[@]}")
-    skip_details=("${new_skip_details[@]}")
-  else
-    skip_casks=()
-    skip_details=()
-  fi
-fi
-
 if [ ${#skip_casks[@]} -eq 0 ]; then
-  _exit_or_return 0
+  return 0
 fi
 
 # Present results
@@ -175,7 +170,7 @@ fi
 case "$response" in
   n|N)
     log_info "Skipped — no changes made"
-    _exit_or_return 0
+    return 0
     ;;
   e|E)
     # Let user edit the list
@@ -208,3 +203,6 @@ fi
 
 # Export for current session
 export HOMEBREW_BUNDLE_CASK_SKIP="$skip_line"
+}
+
+_brew_skip_detect_main

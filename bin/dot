@@ -85,7 +85,7 @@ fi
 
 # Install Brewfile packages
 run_with_streaming_spinner "brew bundle" "$LOGFILE" \
-  brew bundle --file="$dotfilesDirectory/Brewfile" --no-lock
+  brew bundle --file="$dotfilesDirectory/Brewfile"
 
 # Run topic install scripts
 _install_count=0

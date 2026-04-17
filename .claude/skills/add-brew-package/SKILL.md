@@ -12,5 +12,5 @@ Add the package `$ARGUMENTS` to the Brewfile.
    - If unclear, run `brew info $ARGUMENTS` to check. Casks show "cask" in the output.
 2. Read the current Brewfile.
 3. Add the entry to the correct section (taps first, then brews, then casks), in alphabetical order within that section.
-4. Run `brew bundle --no-lock` to verify Brewfile syntax.
+4. Run `brew bundle check` to verify Brewfile syntax.
 5. Tell the user to run `brew bundle` to install.

@@ -27,7 +27,7 @@ Personal zsh dotfiles using topical organization
 - `*.symlink` -- live-symlinked to `$HOME/.{name}` (stripping `.symlink`). **Edits take effect immediately.**
 - `path.zsh` -- loaded first (PATH setup)
 - `completion.zsh` -- loaded last (after compinit)
-- `install.sh` -- executed by `script/install`. Extension is `.sh` to avoid auto-sourcing.
+- `install.sh` -- executed by `script/bootstrap`. Extension is `.sh` to avoid auto-sourcing.
 - `bin/*` -- added to $PATH. Must have a shebang and be executable.
 
 ## Verification
@@ -39,7 +39,7 @@ Automated (PostToolUse hooks run on every Edit/Write):
 
 Manual (run after completing changes):
 - `reload!` or `source ~/.zshrc` -- verify shell changes load without errors
-- `brew bundle --no-lock` -- verify Brewfile installs correctly
+- `brew bundle` -- verify Brewfile installs correctly
 
 ## Work Machines
 
