@@ -1,160 +1,389 @@
 #!/usr/bin/env bash
 #
-# bootstrap installs things.
+# bootstrap — first-time dotfiles setup
+#
+# Links dotfiles to $HOME, configures git, and installs dependencies.
+# Safe to re-run: skips anything already in place.
 
-cd "$(dirname "$0")/.."
-DOTFILES_ROOT=$(pwd -P)
+set -euo pipefail
 
-set -e
+DOTFILES_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+LOGFILE="$DOTFILES_ROOT/.bootstrap.log"
 
-echo ''
+# shellcheck source=lib/output.sh
+source "$DOTFILES_ROOT/script/lib/output.sh"
 
-info () {
-  printf "\r  [ \033[00;34m..\033[0m ] %s\n" "$1"
+# ---------------------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------------------
+
+DRY_RUN=false
+SKIP_DEPS=false
+SKIP_GIT=false
+VERBOSE=false
+
+usage() {
+  cat <<EOF
+Usage: script/bootstrap [options]
+
+Sets up this machine from scratch — symlinks dotfiles, configures git,
+and installs Homebrew packages.
+
+Options:
+  --help        Show this message
+  --dry-run     Preview what would happen without changing anything
+  --skip-git    Skip git config setup
+  --skip-deps   Skip Homebrew and dependency installation
+  --verbose     Show full command output instead of spinners
+EOF
+  exit 0
 }
 
-user () {
-  printf "\r  [ \033[0;33m??\033[0m ] %s\n" "$1"
-}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help)      usage ;;
+    --dry-run)   DRY_RUN=true ;;
+    --skip-deps) SKIP_DEPS=true ;;
+    --skip-git)  SKIP_GIT=true ;;
+    --verbose)   VERBOSE=true ;;
+    *)
+      log_error "Unknown option: $1"
+      usage
+      ;;
+  esac
+  shift
+done
 
-success () {
-  printf "\r\033[2K  [ \033[00;32mOK\033[0m ] %s\n" "$1"
-}
+# ---------------------------------------------------------------------------
+# Environment detection
+# ---------------------------------------------------------------------------
 
-fail () {
-  printf "\r\033[2K  [\033[0;31mFAIL\033[0m] %s\n" "$1"
-  echo ''
-  exit
-}
+IS_MACOS=false
+[[ "$(uname -s)" == "Darwin" ]] && IS_MACOS=true
 
-setup_gitconfig () {
-  if ! [ -f git/gitconfig.local.symlink ]
-  then
-    info 'setup gitconfig'
+# ---------------------------------------------------------------------------
+# Summary tracking
+# ---------------------------------------------------------------------------
 
-    git_credential='cache'
-    if [ "$(uname -s)" == "Darwin" ]
-    then
-      git_credential='osxkeychain'
-    fi
+declare -a SUMMARY_LINES=()
 
-    user ' - What is your github author name?'
-    read -e git_authorname
-    user ' - What is your github author email?'
-    read -e git_authoremail
+summary_add() { SUMMARY_LINES+=("$1"); }
 
-    sed -e "s|AUTHORNAME|$git_authorname|g" -e "s|AUTHOREMAIL|$git_authoremail|g" -e "s|GIT_CREDENTIAL_HELPER|$git_credential|g" git/gitconfig.local.symlink.example > git/gitconfig.local.symlink
-
-    success 'gitconfig'
-  fi
-}
-
-
-link_file () {
-  local src=$1 dst=$2
-
-  local overwrite= backup= skip=
-  local action=
-
-  if [ -f "$dst" -o -d "$dst" -o -L "$dst" ]
-  then
-
-    if [ "$overwrite_all" == "false" ] && [ "$backup_all" == "false" ] && [ "$skip_all" == "false" ]
-    then
-
-      local currentSrc="$(readlink "$dst")"
-
-      if [ "$currentSrc" == "$src" ]
-      then
-
-        skip=true;
-
-      else
-
-        user "File already exists: $dst ($(basename "$src")), what do you want to do?\n\
-        [s]kip, [S]kip all, [o]verwrite, [O]verwrite all, [b]ackup, [B]ackup all?"
-        read -n 1 action
-
-        case "$action" in
-          o )
-            overwrite=true;;
-          O )
-            overwrite_all=true;;
-          b )
-            backup=true;;
-          B )
-            backup_all=true;;
-          s )
-            skip=true;;
-          S )
-            skip_all=true;;
-          * )
-            ;;
-        esac
-
-      fi
-
-    fi
-
-    overwrite=${overwrite:-$overwrite_all}
-    backup=${backup:-$backup_all}
-    skip=${skip:-$skip_all}
-
-    if [ "$overwrite" == "true" ]
-    then
-      rm -rf "$dst"
-      success "removed $dst"
-    fi
-
-    if [ "$backup" == "true" ]
-    then
-      mv "$dst" "${dst}.backup"
-      success "moved $dst to ${dst}.backup"
-    fi
-
-    if [ "$skip" == "true" ]
-    then
-      success "skipped $src"
-    fi
-  fi
-
-  if [ "$skip" != "true" ]  # "false" or empty
-  then
-    ln -s "$1" "$2"
-    success "linked $1 to $2"
-  fi
-}
-
-install_dotfiles () {
-  info 'installing dotfiles'
-
-  local overwrite_all=false backup_all=false skip_all=false
-
-  for src in $(find -H "$DOTFILES_ROOT" -maxdepth 2 -name '*.symlink' -not -path '*.git*')
-  do
-    dst="$HOME/.$(basename "${src%.*}")"
-    link_file "$src" "$dst"
+print_summary() {
+  printf "\n"
+  for line in "${SUMMARY_LINES[@]}"; do
+    printf "%s\n" "$line"
   done
+  printf "\n  ${_DIM}Done in ${SECONDS}s${_RST}\n"
+  printf "\n  ${_DIM}Next: run ${_RST}source ~/.zshrc${_DIM} or open a new terminal${_RST}\n\n"
 }
 
-setup_gitconfig
-install_dotfiles
+# ---------------------------------------------------------------------------
+# Traps
+# ---------------------------------------------------------------------------
 
-# If we're on a Mac, let's install and setup homebrew.
-if [ "$(uname -s)" == "Darwin" ]
-then
-  # Detect casks already installed outside Homebrew (e.g., by company MDM/Chef)
-  # and set HOMEBREW_BUNDLE_CASK_SKIP so brew bundle skips them.
-  source script/brew-skip-detect
+_current_phase=""
 
-  info "installing dependencies"
-  if source bin/dot | while read -r data; do info "$data"; done
-  then
-    success "dependencies installed"
+_on_error() {
+  _spinner_cleanup
+  log_error "Failed during: $_current_phase"
+  if [[ -f "$LOGFILE" ]] && [[ -s "$LOGFILE" ]]; then
+    log_info "Check $LOGFILE for details"
+  fi
+}
+
+_on_exit() {
+  local rc=$?
+  _spinner_cleanup
+  if [[ $rc -eq 0 ]] && [[ ${#SUMMARY_LINES[@]} -gt 0 ]]; then
+    print_summary
+  fi
+}
+
+trap '_on_error' ERR
+trap '_on_exit' EXIT
+
+# ---------------------------------------------------------------------------
+# Init
+# ---------------------------------------------------------------------------
+
+: > "$LOGFILE"  # Truncate log file
+
+printf "\n  ${_BOLD}dotfiles${_RST} ${_DIM}%s${_RST}\n" "$DOTFILES_ROOT"
+
+# ---------------------------------------------------------------------------
+# Phase 1: Preflight
+# ---------------------------------------------------------------------------
+
+_current_phase="Preflight"
+log_phase "1/4" "Preflight"
+
+if ! command -v git &>/dev/null; then
+  log_error "git is not installed"
+  exit 1
+fi
+log_success "git found"
+
+if $IS_MACOS; then
+  if command -v brew &>/dev/null; then
+    log_success "homebrew found"
   else
-    fail "error installing dependencies"
+    log_info "homebrew not found — will install in phase 4"
   fi
 fi
 
-echo ''
-echo '  All installed!'
+if $DRY_RUN; then
+  log_info "Dry run — previewing phases"
+  printf "\n"
+  if $SKIP_GIT; then
+    log_skip "Git config (--skip-git)"
+  else
+    log_info "Would configure git (if needed)"
+  fi
+  log_info "Would link $(printf '%s\n' "$DOTFILES_ROOT"/*/*.symlink | wc -l | tr -d ' ') symlink files"
+  if $SKIP_DEPS; then
+    log_skip "Dependencies (--skip-deps)"
+  elif $IS_MACOS; then
+    log_info "Would install Homebrew packages"
+  else
+    log_skip "Dependencies (not macOS)"
+  fi
+  printf "\n"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 2: Git config
+# ---------------------------------------------------------------------------
+
+_current_phase="Git config"
+
+if $SKIP_GIT; then
+  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Git config          skipped (--skip-git)${_RST}"
+else
+  log_phase "2/4" "Git config"
+
+  gitconfig_local="$DOTFILES_ROOT/git/gitconfig.local.symlink"
+
+  if [[ -f "$gitconfig_local" ]]; then
+    log_skip "git/gitconfig.local.symlink already exists"
+    summary_add "  $(printf '%s' "$_CHECK")  ${_DIM}Git config          already configured${_RST}"
+  elif [[ "$INTERACTIVE" != true ]]; then
+    log_warn "Skipping git config — requires interactive terminal"
+    summary_add "  $(printf '%s' "$_WARN")  Git config          skipped (non-interactive)"
+  else
+    # Detect defaults from existing global config
+    default_name="$(git config --global user.name 2>/dev/null || true)"
+    default_email="$(git config --global user.email 2>/dev/null || true)"
+
+    git_authorname="$(prompt_user "Git author name?" "$default_name")"
+    printf "\n"
+    git_authoremail="$(prompt_user "Git author email?" "$default_email")"
+    printf "\n"
+
+    git_credential='cache'
+    $IS_MACOS && git_credential='osxkeychain'
+
+    cat > "$gitconfig_local" <<EOF
+[user]
+        name = $git_authorname
+        email = $git_authoremail
+[credential]
+        helper = $git_credential
+EOF
+
+    log_success "Created git/gitconfig.local.symlink"
+    summary_add "  $(printf '%s' "$_CHECK")  Git config          configured"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 3: Symlinks
+# ---------------------------------------------------------------------------
+
+_current_phase="Symlinks"
+log_phase "3/4" "Symlinks"
+
+_link_count=0
+_skip_count=0
+_backup_count=0
+
+overwrite_all=false
+backup_all=false
+skip_all=false
+
+link_file() {
+  local src="$1" dst="$2"
+
+  local overwrite=false backup=false skip=false
+
+  if [[ -f "$dst" ]] || [[ -d "$dst" ]] || [[ -L "$dst" ]]; then
+    if [[ "$overwrite_all" == false ]] && [[ "$backup_all" == false ]] && [[ "$skip_all" == false ]]; then
+      local current_src
+      current_src="$(readlink "$dst" 2>/dev/null || true)"
+
+      if [[ "$current_src" == "$src" ]]; then
+        skip=true
+      elif [[ "$INTERACTIVE" == true ]]; then
+        printf "\n"
+        log_warn "File already exists: $dst ($(basename "$src"))"
+        local action
+        action="$(prompt_user "[s]kip, [S]kip all, [o]verwrite, [O]verwrite all, [b]ackup, [B]ackup all?" "s")"
+        printf "\n"
+
+        case "$action" in
+          o) overwrite=true ;;
+          O) overwrite_all=true ;;
+          b) backup=true ;;
+          B) backup_all=true ;;
+          s) skip=true ;;
+          S) skip_all=true ;;
+          *) skip=true ;;
+        esac
+      else
+        # Non-interactive: auto-skip conflicts
+        skip=true
+      fi
+    fi
+
+    [[ "$overwrite" == false ]] && overwrite="$overwrite_all"
+    [[ "$backup" == false ]]    && backup="$backup_all"
+    [[ "$skip" == false ]]      && skip="$skip_all"
+
+    if [[ "$overwrite" == true ]]; then
+      rm -rf "$dst"
+    fi
+
+    if [[ "$backup" == true ]]; then
+      mv "$dst" "${dst}.backup"
+      _backup_count=$((_backup_count + 1))
+    fi
+
+    if [[ "$skip" == true ]]; then
+      _skip_count=$((_skip_count + 1))
+    fi
+  fi
+
+  if [[ "$skip" != true ]]; then
+    ln -s "$src" "$dst"
+    _link_count=$((_link_count + 1))
+  fi
+}
+
+for src in "$DOTFILES_ROOT"/*/*.symlink; do
+  [[ -e "$src" ]] || continue  # guard against empty glob
+  dst="$HOME/.$(basename "${src%.*}")"
+  link_file "$src" "$dst"
+done
+
+# Build symlink summary line
+_sym_parts=()
+[[ $_link_count -gt 0 ]]   && _sym_parts+=("$_link_count linked")
+[[ $_skip_count -gt 0 ]]   && _sym_parts+=("$_skip_count skipped")
+[[ $_backup_count -gt 0 ]] && _sym_parts+=("$_backup_count backed up")
+if [[ ${#_sym_parts[@]} -eq 0 ]]; then
+  _sym_detail="nothing to do"
+else
+  _sym_detail=""
+  for _i in "${!_sym_parts[@]}"; do
+    [[ $_i -gt 0 ]] && _sym_detail+=", "
+    _sym_detail+="${_sym_parts[$_i]}"
+  done
+fi
+
+if [[ $_link_count -gt 0 ]]; then
+  log_success "$_link_count symlinks created"
+  summary_add "  $(printf '%s' "$_CHECK")  Symlinks            $_sym_detail"
+else
+  log_skip "All symlinks already in place"
+  summary_add "  $(printf '%s' "$_CHECK")  ${_DIM}Symlinks            $_sym_detail${_RST}"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 4: Dependencies
+# ---------------------------------------------------------------------------
+
+_current_phase="Dependencies"
+
+if $SKIP_DEPS; then
+  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Dependencies        skipped (--skip-deps)${_RST}"
+elif ! $IS_MACOS; then
+  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Dependencies        skipped (not macOS)${_RST}"
+else
+  log_phase "4/4" "Dependencies"
+
+  # --- Homebrew ---
+  if ! command -v brew &>/dev/null; then
+    if $VERBOSE; then
+      log_info "Installing Homebrew..."
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      log_success "Homebrew installed"
+    else
+      run_with_spinner "Installing Homebrew" "$LOGFILE" \
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+
+    # Ensure brew is on PATH for the rest of this script
+    if [[ -x "/opt/homebrew/bin/brew" ]]; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x "/usr/local/bin/brew" ]]; then
+      eval "$(/usr/local/bin/brew shellenv)"
+    fi
+  else
+    log_skip "Homebrew already installed"
+  fi
+
+  # --- Cask skip detection ---
+  if [[ -f "$DOTFILES_ROOT/script/brew-skip-detect" ]]; then
+    source "$DOTFILES_ROOT/script/brew-skip-detect"
+  fi
+
+  # --- Brew update / upgrade / bundle ---
+  if $VERBOSE; then
+    log_info "brew update..."
+    brew update 2>&1 | tee -a "$LOGFILE"
+    log_success "brew update"
+
+    log_info "brew upgrade..."
+    brew upgrade 2>&1 | tee -a "$LOGFILE"
+    log_success "brew upgrade"
+
+    log_info "brew bundle..."
+    brew bundle --file="$DOTFILES_ROOT/Brewfile" --no-lock 2>&1 | tee -a "$LOGFILE"
+    log_success "brew bundle"
+  else
+    run_with_spinner "brew update" "$LOGFILE" \
+      brew update
+
+    # brew upgrade can "fail" (exit 1) when there's nothing to upgrade
+    spinner_start "brew upgrade"
+    if brew upgrade >> "$LOGFILE" 2>&1; then
+      spinner_stop ok "brew upgrade"
+    else
+      spinner_stop warn "brew upgrade (some packages skipped)"
+    fi
+
+    run_with_spinner "brew bundle" "$LOGFILE" \
+      brew bundle --file="$DOTFILES_ROOT/Brewfile" --no-lock
+  fi
+
+  summary_add "  $(printf '%s' "$_CHECK")  Packages            installed"
+
+  # --- Topic install scripts ---
+  _install_count=0
+  while IFS= read -r -d '' installer; do
+    [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
+    if $VERBOSE; then
+      log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
+      sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
+    else
+      sh -c "$installer" >> "$LOGFILE" 2>&1
+    fi
+    _install_count=$((_install_count + 1))
+  done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
+
+  if [[ $_install_count -gt 0 ]]; then
+    log_success "$_install_count install scripts run"
+    summary_add "  $(printf '%s' "$_CHECK")  Install scripts     $_install_count run"
+  fi
+fi

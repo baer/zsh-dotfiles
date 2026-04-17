@@ -6,22 +6,16 @@
 # (e.g., by company MDM, Chef, or manual download) and offers to set
 # HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc so `brew bundle` skips them.
 
-set -e
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 DOTFILES_ROOT=$(pwd -P)
 
-info () {
-  printf "\r  [ \033[00;34m..\033[0m ] %s\n" "$1"
-}
+# shellcheck source=lib/output.sh
+source "$DOTFILES_ROOT/script/lib/output.sh"
 
-user () {
-  printf "\r  [ \033[0;33m??\033[0m ] %s\n" "$1"
-}
-
-success () {
-  printf "\r\033[2K  [ \033[00;32mOK\033[0m ] %s\n" "$1"
-}
+# When sourced from bootstrap, use return instead of exit
+_exit_or_return() { return "${1:-0}"; }
 
 # Collect cask tokens from Brewfile
 brewfile_casks=()
@@ -30,8 +24,8 @@ while IFS= read -r cask; do
 done < <(grep "^cask '" "$DOTFILES_ROOT/Brewfile" | awk -F"'" '{print $2}')
 
 if [ ${#brewfile_casks[@]} -eq 0 ]; then
-  info "No casks found in Brewfile"
-  exit 0
+  log_info "No casks found in Brewfile"
+  _exit_or_return 0
 fi
 
 # Get currently brew-managed casks
@@ -46,13 +40,13 @@ for cask in "${brewfile_casks[@]}"; do
 done
 
 if [ ${#unmanaged_casks[@]} -eq 0 ]; then
-  info "All Brewfile casks are already managed by Homebrew"
-  exit 0
+  log_info "All Brewfile casks are already managed by Homebrew"
+  _exit_or_return 0
 fi
 
 # Query brew for app artifact names in a single batch call, then detect
 # which apps are already present on disk via a non-Homebrew install.
-info "Checking ${#unmanaged_casks[@]} casks not managed by Homebrew..."
+log_info "Checking ${#unmanaged_casks[@]} casks not managed by Homebrew..."
 
 skip_casks=()
 skip_details=()
@@ -134,32 +128,36 @@ for cask in data.get('casks', []):
 done
 
 if [ ${#skip_casks[@]} -eq 0 ]; then
-  info "No externally installed casks detected"
-  exit 0
+  log_info "No externally installed casks detected"
+  _exit_or_return 0
 fi
 
 # Present results
-echo ""
-info "Found ${#skip_casks[@]} casks already installed outside Homebrew:"
+printf "\n"
+log_warn "Found ${#skip_casks[@]} casks already installed outside Homebrew:"
 for detail in "${skip_details[@]}"; do
   printf "           %s\n" "$detail"
 done
-echo ""
+printf "\n"
 
-user "Add these to HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc? [Y/n/e]"
-printf "           Y = yes, n = no, e = edit list first\n"
-printf "           > "
-read -r response
+if [[ "${INTERACTIVE:-true}" != true ]]; then
+  # Non-interactive: auto-accept
+  response="Y"
+  log_info "Auto-accepting cask skip list (non-interactive)"
+else
+  response="$(prompt_user "Add these to HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc? [Y/n/e]" "Y")"
+  printf "\n"
+fi
 
 case "$response" in
   n|N)
-    info "Skipped — no changes made"
-    exit 0
+    log_info "Skipped — no changes made"
+    _exit_or_return 0
     ;;
   e|E)
     # Let user edit the list
     skip_line="${skip_casks[*]}"
-    user "Current list (space-separated, edit and press Enter):"
+    log_info "Current list (space-separated, edit and press Enter):"
     printf "           > "
     read -r -e -i "$skip_line" edited_line
     skip_line="$edited_line"
@@ -176,13 +174,13 @@ export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
 if [ -f "$localrc" ] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
   # Update existing line
   sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|$export_line|" "$localrc"
-  success "Updated HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc"
+  log_success "Updated HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc"
 else
   # Append
   echo "" >> "$localrc"
   echo "# Casks to skip in brew bundle (installed outside Homebrew)" >> "$localrc"
   echo "$export_line" >> "$localrc"
-  success "Added HOMEBREW_BUNDLE_CASK_SKIP to ~/.localrc"
+  log_success "Added HOMEBREW_BUNDLE_CASK_SKIP to ~/.localrc"
 fi
 
 # Export for current session
