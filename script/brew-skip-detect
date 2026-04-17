@@ -136,7 +136,7 @@ fi
 printf "\n"
 log_warn "Found ${#skip_casks[@]} casks already installed outside Homebrew:"
 for detail in "${skip_details[@]}"; do
-  printf "           %s\n" "$detail"
+  printf "    %s %s\n" "$_INFO" "$detail"
 done
 printf "\n"
 

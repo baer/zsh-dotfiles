@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run all dotfiles installers.
+# Deprecated — use script/bootstrap instead.
 
-set -e
-
-cd "$(dirname $0)"/..
-
-# find the installers and run them iteratively
-while IFS= read -r -d '' installer; do
-  sh -c "${installer}"
-done < <(find . -name install.sh -print0)
+printf "Note: script/install is deprecated. Use script/bootstrap instead.\n" >&2
+exec "$(dirname "$0")/bootstrap" "$@"

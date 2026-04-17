@@ -62,20 +62,24 @@ IS_MACOS=false
 [[ "$(uname -s)" == "Darwin" ]] && IS_MACOS=true
 
 # ---------------------------------------------------------------------------
-# Summary tracking
+# Summary tracking (structured)
 # ---------------------------------------------------------------------------
 
-declare -a SUMMARY_LINES=()
+declare -a _SUM_STATUS=()
+declare -a _SUM_LABEL=()
+declare -a _SUM_DETAIL=()
+declare -a _SUM_TIME=()
 
-summary_add() { SUMMARY_LINES+=("$1"); }
+summary_add() {
+  _SUM_STATUS+=("$1")
+  _SUM_LABEL+=("$2")
+  _SUM_DETAIL+=("$3")
+  _SUM_TIME+=("${4:-}")
+}
 
 print_summary() {
-  printf "\n"
-  for line in "${SUMMARY_LINES[@]}"; do
-    printf "%s\n" "$line"
-  done
-  printf "\n  ${_DIM}Done in ${SECONDS}s${_RST}\n"
-  printf "\n  ${_DIM}Next: run ${_RST}source ~/.zshrc${_DIM} or open a new terminal${_RST}\n\n"
+  log_summary_box _SUM_STATUS _SUM_LABEL _SUM_DETAIL _SUM_TIME "${SECONDS}s"
+  log_celebration
 }
 
 # ---------------------------------------------------------------------------
@@ -86,16 +90,13 @@ _current_phase=""
 
 _on_error() {
   _spinner_cleanup
-  log_error "Failed during: $_current_phase"
-  if [[ -f "$LOGFILE" ]] && [[ -s "$LOGFILE" ]]; then
-    log_info "Check $LOGFILE for details"
-  fi
+  log_error_context "$LOGFILE" "$_current_phase"
 }
 
 _on_exit() {
   local rc=$?
   _spinner_cleanup
-  if [[ $rc -eq 0 ]] && [[ ${#SUMMARY_LINES[@]} -gt 0 ]]; then
+  if [[ $rc -eq 0 ]] && [[ ${#_SUM_STATUS[@]} -gt 0 ]]; then
     print_summary
   fi
 }
@@ -109,7 +110,7 @@ trap '_on_exit' EXIT
 
 : > "$LOGFILE"  # Truncate log file
 
-printf "\n  ${_BOLD}dotfiles${_RST} ${_DIM}%s${_RST}\n" "$DOTFILES_ROOT"
+log_header "$DOTFILES_ROOT"
 
 # ---------------------------------------------------------------------------
 # Phase 1: Preflight
@@ -133,14 +134,17 @@ if $IS_MACOS; then
 fi
 
 if $DRY_RUN; then
-  log_info "Dry run — previewing phases"
+  log_info "Dry run — previewing changes"
   printf "\n"
+
+  local_symlinks="$(printf '%s\n' "$DOTFILES_ROOT"/*/*.symlink 2>/dev/null | wc -l | tr -d ' ')"
+
   if $SKIP_GIT; then
     log_skip "Git config (--skip-git)"
   else
     log_info "Would configure git (if needed)"
   fi
-  log_info "Would link $(printf '%s\n' "$DOTFILES_ROOT"/*/*.symlink | wc -l | tr -d ' ') symlink files"
+  log_info "Would link $local_symlinks symlink files"
   if $SKIP_DEPS; then
     log_skip "Dependencies (--skip-deps)"
   elif $IS_MACOS; then
@@ -159,18 +163,18 @@ fi
 _current_phase="Git config"
 
 if $SKIP_GIT; then
-  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Git config          skipped (--skip-git)${_RST}"
+  summary_add skip "Git config" "skipped (--skip-git)" "<1s"
 else
-  log_phase "2/4" "Git config"
+  log_phase "2/4" "Git Config"
 
   gitconfig_local="$DOTFILES_ROOT/git/gitconfig.local.symlink"
 
   if [[ -f "$gitconfig_local" ]]; then
     log_skip "git/gitconfig.local.symlink already exists"
-    summary_add "  $(printf '%s' "$_CHECK")  ${_DIM}Git config          already configured${_RST}"
+    summary_add ok "Git config" "already configured" "$(_phase_timer_elapsed "Git Config")"
   elif [[ "$INTERACTIVE" != true ]]; then
     log_warn "Skipping git config — requires interactive terminal"
-    summary_add "  $(printf '%s' "$_WARN")  Git config          skipped (non-interactive)"
+    summary_add warn "Git config" "skipped (non-interactive)" "$(_phase_timer_elapsed "Git Config")"
   else
     # Detect defaults from existing global config
     default_name="$(git config --global user.name 2>/dev/null || true)"
@@ -193,7 +197,7 @@ else
 EOF
 
     log_success "Created git/gitconfig.local.symlink"
-    summary_add "  $(printf '%s' "$_CHECK")  Git config          configured"
+    summary_add ok "Git config" "configured" "$(_phase_timer_elapsed "Git Config")"
   fi
 fi
 
@@ -211,6 +215,7 @@ _backup_count=0
 overwrite_all=false
 backup_all=false
 skip_all=false
+_first_conflict=true
 
 link_file() {
   local src="$1" dst="$2"
@@ -226,18 +231,34 @@ link_file() {
         skip=true
       elif [[ "$INTERACTIVE" == true ]]; then
         printf "\n"
-        log_warn "File already exists: $dst ($(basename "$src"))"
-        local action
-        action="$(prompt_user "[s]kip, [S]kip all, [o]verwrite, [O]verwrite all, [b]ackup, [B]ackup all?" "s")"
+        log_warn "File exists: $dst"
+        if [[ -n "$current_src" ]]; then
+          log_info "current → $current_src"
+        fi
         printf "\n"
 
-        case "$action" in
-          o) overwrite=true ;;
-          O) overwrite_all=true ;;
-          b) backup=true ;;
-          B) backup_all=true ;;
-          s) skip=true ;;
-          S) skip_all=true ;;
+        local choice
+        choice="$(prompt_choice "Action" "Skip" "Overwrite" "Backup")"
+        printf "\n"
+
+        # On first conflict, offer "apply to all"
+        if [[ "$_first_conflict" == true ]]; then
+          _first_conflict=false
+          local apply_all
+          apply_all="$(prompt_user "Apply to all remaining conflicts?" "N")"
+          printf "\n"
+          if [[ "$apply_all" =~ ^[yY] ]]; then
+            case "$choice" in
+              1) skip_all=true ;;
+              2) overwrite_all=true ;;
+              3) backup_all=true ;;
+            esac
+          fi
+        fi
+
+        case "$choice" in
+          2) overwrite=true ;;
+          3) backup=true ;;
           *) skip=true ;;
         esac
       else
@@ -276,7 +297,7 @@ for src in "$DOTFILES_ROOT"/*/*.symlink; do
   link_file "$src" "$dst"
 done
 
-# Build symlink summary line
+# Build symlink summary detail
 _sym_parts=()
 [[ $_link_count -gt 0 ]]   && _sym_parts+=("$_link_count linked")
 [[ $_skip_count -gt 0 ]]   && _sym_parts+=("$_skip_count skipped")
@@ -293,11 +314,12 @@ fi
 
 if [[ $_link_count -gt 0 ]]; then
   log_success "$_link_count symlinks created"
-  summary_add "  $(printf '%s' "$_CHECK")  Symlinks            $_sym_detail"
-else
-  log_skip "All symlinks already in place"
-  summary_add "  $(printf '%s' "$_CHECK")  ${_DIM}Symlinks            $_sym_detail${_RST}"
 fi
+if [[ $_skip_count -gt 0 ]]; then
+  log_skip "$_skip_count already in place"
+fi
+
+summary_add ok "Symlinks" "$_sym_detail" "$(_phase_timer_elapsed "Symlinks")"
 
 # ---------------------------------------------------------------------------
 # Phase 4: Dependencies
@@ -306,9 +328,9 @@ fi
 _current_phase="Dependencies"
 
 if $SKIP_DEPS; then
-  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Dependencies        skipped (--skip-deps)${_RST}"
+  summary_add skip "Dependencies" "skipped (--skip-deps)" "<1s"
 elif ! $IS_MACOS; then
-  summary_add "  $(printf '%s' "$_SKIP")  ${_DIM}Dependencies        skipped (not macOS)${_RST}"
+  summary_add skip "Dependencies" "skipped (not macOS)" "<1s"
 else
   log_phase "4/4" "Dependencies"
 
@@ -363,11 +385,11 @@ else
       spinner_stop warn "brew upgrade (some packages skipped)"
     fi
 
-    run_with_spinner "brew bundle" "$LOGFILE" \
+    run_with_streaming_spinner "brew bundle" "$LOGFILE" \
       brew bundle --file="$DOTFILES_ROOT/Brewfile" --no-lock
   fi
 
-  summary_add "  $(printf '%s' "$_CHECK")  Packages            installed"
+  summary_add ok "Dependencies" "installed" "$(_phase_timer_elapsed "Dependencies")"
 
   # --- Topic install scripts ---
   _install_count=0
@@ -384,6 +406,5 @@ else
 
   if [[ $_install_count -gt 0 ]]; then
     log_success "$_install_count install scripts run"
-    summary_add "  $(printf '%s' "$_CHECK")  Install scripts     $_install_count run"
   fi
 fi
