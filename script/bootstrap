@@ -399,7 +399,7 @@ else
     log_success "brew upgrade"
 
     log_info "brew bundle..."
-    brew bundle --file="$DOTFILES_ROOT/Brewfile" --no-lock 2>&1 | tee -a "$LOGFILE"
+    brew bundle --file="$DOTFILES_ROOT/Brewfile" 2>&1 | tee -a "$LOGFILE"
     log_success "brew bundle"
   else
     run_with_spinner "brew update" "$LOGFILE" \
@@ -414,7 +414,7 @@ else
     fi
 
     run_with_streaming_spinner "brew bundle" "$LOGFILE" \
-      brew bundle --file="$DOTFILES_ROOT/Brewfile" --no-lock
+      brew bundle --file="$DOTFILES_ROOT/Brewfile"
   fi
 
   summary_add ok "Dependencies" "installed" "$(_phase_timer_elapsed "Dependencies")"

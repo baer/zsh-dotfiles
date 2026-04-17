@@ -14,6 +14,10 @@ DOTFILES_ROOT=$(pwd -P)
 # shellcheck source=lib/output.sh
 source "$DOTFILES_ROOT/script/lib/output.sh"
 
+# Source localrc to pick up any existing skip list
+# shellcheck disable=SC1091
+[[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
+
 # When sourced from bootstrap, use return instead of exit
 _exit_or_return() { return "${1:-0}"; }
 
@@ -127,8 +131,22 @@ for cask in data.get('casks', []):
   fi
 done
 
+# Filter out casks already in the skip list
+if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
+  new_skip_casks=()
+  new_skip_details=()
+  for i in "${!skip_casks[@]}"; do
+    cask="${skip_casks[$i]}"
+    if ! echo " $HOMEBREW_BUNDLE_CASK_SKIP " | grep -q " $cask "; then
+      new_skip_casks+=("$cask")
+      new_skip_details+=("${skip_details[$i]}")
+    fi
+  done
+  skip_casks=("${new_skip_casks[@]+"${new_skip_casks[@]}"}")
+  skip_details=("${new_skip_details[@]+"${new_skip_details[@]}"}")
+fi
+
 if [ ${#skip_casks[@]} -eq 0 ]; then
-  log_info "No externally installed casks detected"
   _exit_or_return 0
 fi
 
