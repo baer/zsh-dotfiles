@@ -618,6 +618,31 @@ _detect_error_hint() {
     printf "npm found conflicting files from a previous install.\n        Run the command shown above with --force, or remove the conflicting file."
     return
   fi
+
+  if [[ "$text" == *"lockf:"* ]] && [[ "$text" == *"already locked"* ]]; then
+    printf "Homebrew update lock is held by another process.\n        Run: lsof \"\$(brew --prefix)/var/homebrew/locks/update\" to find the holder."
+    return
+  fi
+
+  if [[ "$text" == *"Another"*"brew update"*"already running"* ]]; then
+    printf "Homebrew update lock is held by another process.\n        Run: lsof \"\$(brew --prefix)/var/homebrew/locks/update\" to find the holder."
+    return
+  fi
+
+  if [[ "$text" == *"does not exist"* ]] && [[ "$text" == *"brew untap"* ]]; then
+    printf "An obsolete tap is blocking brew update.\n        The error message above includes the untap command to fix it."
+    return
+  fi
+
+  if [[ "$text" == *"has been disabled because"* ]]; then
+    printf "A disabled formula is causing errors during upgrade.\n        Uninstall it: brew uninstall <formula>"
+    return
+  fi
+
+  if [[ "$text" == *"It seems the App source"* ]] && [[ "$text" == *"is not there"* ]]; then
+    printf "A cask has metadata but its app is missing.\n        Reinstall: brew reinstall --cask <cask> or uninstall: brew uninstall --cask <cask>"
+    return
+  fi
 }
 
 # ---------------------------------------------------------------------------
