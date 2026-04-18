@@ -2,3 +2,4 @@ git/gitconfig.local.symlink
 Brewfile.lock.json
 .claude/settings.local.json
 .bootstrap.log
+.worktrees/
