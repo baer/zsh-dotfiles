@@ -276,12 +276,12 @@ if ! _check_brew_reachable; then
   exit 1
 fi
 
-_check_update_lock
-_check_fsmonitor_taps
-_check_obsolete_taps
-_check_disabled_formulae
-_check_orphaned_casks
-_check_bundle_satisfaction
+_check_update_lock || true
+_check_fsmonitor_taps || true
+_check_obsolete_taps || true
+_check_disabled_formulae || true
+_check_orphaned_casks || true
+_check_bundle_satisfaction || true
 
 if [[ $_failures -eq 0 ]]; then
   printf "\n  ${_GREEN}${_BOLD}All checks passed${_RST}\n\n"
