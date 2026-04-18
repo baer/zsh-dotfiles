@@ -390,8 +390,16 @@ else
     log_success "brew update"
 
     log_info "brew upgrade..."
-    brew upgrade 2>&1 | tee -a "$LOGFILE"
-    log_success "brew upgrade"
+    if brew upgrade 2>&1 | tee -a "$LOGFILE"; then
+      log_success "brew upgrade"
+    else
+      _upgrade_tail="$(tail -n 30 "$LOGFILE")"
+      if echo "$_upgrade_tail" | grep -qE 'has been disabled|is not there|Permission denied|locked'; then
+        log_error "brew upgrade (see ${LOGFILE##*/} for details)"
+      else
+        log_warn "brew upgrade (some packages skipped)"
+      fi
+    fi
 
     log_info "brew bundle..."
     _log_lines_before=$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)
@@ -401,12 +409,19 @@ else
     run_with_substep_spinner "brew update" "$LOGFILE" \
       brew update
 
-    # brew upgrade can "fail" (exit 1) when there's nothing to upgrade
+    # brew upgrade exits nonzero for both benign (nothing to upgrade) and real
+    # failures (disabled formula, missing cask app, permissions). Inspect the
+    # log to distinguish them.
     substep_start "brew upgrade"
     if brew upgrade >> "$LOGFILE" 2>&1; then
       substep_stop ok "brew upgrade"
     else
-      substep_stop warn "brew upgrade (some packages skipped)"
+      _upgrade_tail="$(tail -n 30 "$LOGFILE")"
+      if echo "$_upgrade_tail" | grep -qE 'has been disabled|is not there|Permission denied|locked'; then
+        substep_stop fail "brew upgrade (errors in ${LOGFILE##*/})"
+      else
+        substep_stop warn "brew upgrade (some packages skipped)"
+      fi
     fi
 
     _log_lines_before=$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)
