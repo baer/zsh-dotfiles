@@ -160,40 +160,110 @@ done
 printf "\n"
 
 if [[ "${INTERACTIVE:-true}" != true ]]; then
-  # Non-interactive: auto-accept
-  response="Y"
+  # Non-interactive: auto-accept skip for all
+  _skip_response=1
   log_info "Auto-accepting cask skip list (non-interactive)"
 else
-  response="$(prompt_user "Add these to HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc? [Y/n/e]" "Y")"
+  _skip_response="$(prompt_choice "Action" "Skip all (add to skip list)" "Review individually" "Cancel")"
   printf "\n"
 fi
 
-case "$response" in
-  n|N)
-    log_info "Skipped — no changes made"
+case "$_skip_response" in
+  3)
+    log_info "Cancelled — no changes made"
     return 0
     ;;
-  e|E)
-    # Let user edit the list
-    skip_line="${skip_casks[*]}"
-    log_info "Current list (space-separated, edit and press Enter):"
-    printf "           > "
-    read -r -e -i "$skip_line" edited_line
-    skip_line="$edited_line"
+  2)
+    # Per-app review
+    _final_skip_casks=()
+    for i in "${!skip_casks[@]}"; do
+      local cask="${skip_casks[$i]}"
+      local detail="${skip_details[$i]}"
+      printf "    %s\n" "$detail"
+      local _app_response
+      _app_response="$(prompt_choice "Action" "Skip (company-managed)" "Adopt into brew" "Decide later")"
+      printf "\n"
+
+      case "$_app_response" in
+        1)
+          _final_skip_casks+=("$cask")
+          ;;
+        2)
+          # Adoption: find the app path and trash it
+          # Extract app name from detail: "cask (App Name.app)" -> "App Name.app"
+          local app_name=""
+          app_name="$(echo "$detail" | sed 's/.*(\(.*\))/\1/')"
+
+          # Check if running
+          if [[ -n "$app_name" ]] && [[ "$app_name" != *"pkg:"* ]]; then
+            local app_base="${app_name%.app}"
+            if pgrep -fi "$app_base" > /dev/null 2>&1; then
+              log_warn "$app_base is running. Please quit it before continuing."
+              printf "    Press Enter when ready, or 's' to skip... "
+              local _wait_response
+              read -r _wait_response
+              if [[ "$_wait_response" == "s" ]]; then
+                log_info "Skipped $cask"
+                continue
+              fi
+            fi
+
+            # Trash the manual install
+            local app_path="/Applications/$app_name"
+            if [[ -d "$app_path" ]]; then
+              if mv "$app_path" "$HOME/.Trash/" 2>/dev/null; then
+                log_success "Moved $app_name to Trash"
+              else
+                log_error "Could not move $app_name to Trash (permissions?)"
+                log_info "Skipping adoption of $cask"
+                continue
+              fi
+            fi
+          elif [[ "$app_name" == *"pkg:"* ]]; then
+            log_warn "Package-based install detected for $cask — cannot auto-trash"
+            log_info "Adding to skip list instead"
+            _final_skip_casks+=("$cask")
+            continue
+          fi
+
+          # Don't add to skip list — brew bundle will install it
+          log_success "Adopted $cask — brew bundle will install it"
+          ;;
+        3)
+          # Decide later — don't skip, don't adopt
+          log_info "Deferred $cask"
+          ;;
+      esac
+    done
+
+    # Only write skip list if there are casks to skip
+    if [[ ${#_final_skip_casks[@]} -eq 0 ]]; then
+      if [[ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]]; then
+        log_info "No new casks to skip (existing skip list unchanged)"
+      fi
+      return 0
+    fi
+    skip_casks=("${_final_skip_casks[@]}")
     ;;
   *)
-    skip_line="${skip_casks[*]}"
+    # Skip all — current behavior
     ;;
 esac
+
+# Build skip line from remaining skip_casks
+local skip_line="${skip_casks[*]}"
 
 # Merge with existing skip list so we don't overwrite previously saved casks
 if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
   skip_line="$HOMEBREW_BUNDLE_CASK_SKIP $skip_line"
 fi
 
+# Deduplicate the skip line
+skip_line="$(echo "$skip_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+
 # Write to ~/.localrc
-localrc="$HOME/.localrc"
-export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
+local localrc="$HOME/.localrc"
+local export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
 
 if [ -f "$localrc" ] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
   # Update existing line
