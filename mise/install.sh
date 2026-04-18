@@ -13,7 +13,8 @@ fi
 ln -sf "$dir/config.toml" "$config_home/mise/config.toml"
 echo "  Linked mise config"
 
-# Install tools if mise is available
+# Trust and install tools if mise is available
 if command -v mise >/dev/null 2>&1; then
-  mise install
+  mise trust "$config_home/mise/config.toml"
+  mise install --yes
 fi

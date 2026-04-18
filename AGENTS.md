@@ -13,7 +13,7 @@ Personal zsh dotfiles using topical organization
 
 **Alphabetical ordering is load-bearing.** Topics load by directory name, so `system/` always loads after `editors/`. If two topics set the same variable, the later directory wins.
 
-**Platform helpers** (`is_macos`, `is_linux`) are defined in `system/platform.zsh` and available during the `*.zsh` pass (step 3). They are NOT available during the `path.zsh` pass (step 2) — use inline `[[ "$(uname -s)" == "Darwin" ]]` guards in path files.
+**Platform helpers** (`is_macos`, `is_linux`) are defined in `system/_platform.zsh` and available during the `*.zsh` pass (step 3). They are NOT available during the `path.zsh` pass (step 2) — use inline `[[ "$(uname -s)" == "Darwin" ]]` guards in path files.
 
 ## Commands
 
@@ -65,7 +65,7 @@ The Brewfile is the canonical list of all desired packages. On work machines whe
 Shell config loads on both macOS and Linux. Packages (Homebrew) are macOS-only.
 
 - `path.zsh` files guard on `[[ "$(uname -s)" == "Darwin" ]]` (inline, since platform helpers load later)
-- Other `.zsh` files use `is_macos` / `is_linux` helpers from `system/platform.zsh`
+- Other `.zsh` files use `is_macos` / `is_linux` helpers from `system/_platform.zsh`
 - `install.sh` scripts run on all platforms. Self-guard with `[ "$(uname -s)" = "Darwin" ] || exit 0` if macOS-only.
 - Bootstrap Phase 4 (Homebrew) is macOS-only. Phase 5 (install scripts) runs everywhere.
 
