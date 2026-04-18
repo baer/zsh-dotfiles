@@ -560,14 +560,14 @@ if $IS_MACOS && ! $SKIP_DEPS; then
   if $_drift_skipped; then
     _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
   elif [[ $_audit_count -gt 0 ]]; then
-    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run script/brew-audit")
+    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}")
   fi
 
   if $VERBOSE; then
     if $_drift_skipped; then
       log_warn "drift check skipped: brew query failed (Homebrew may be broken)"
     elif [[ $_audit_count -gt 0 ]]; then
-      log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+      log_warn "$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}"
     fi
   else
     if $_drift_skipped; then
