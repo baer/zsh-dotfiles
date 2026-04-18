@@ -9,16 +9,21 @@
 
 [alias]
         # Branch management
-        b   = branch
-        sw  = switch
-        swc = switch -c
-        rs  = restore
+        b    = branch
+        sw   = switch
+        swc  = switch -c
+        rs   = restore
+        main = "!git switch $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
 
         # Staging & committing
         a     = add -A
         c     = commit
+        ac    = "!f() { git add -A && git commit -m \"$*\"; }; f"
         amend = commit --amend --no-edit
         fixup = commit --fixup
+
+        # Rebase
+        ri = rebase -i
 
         # Status & info
         s     = status -sb
@@ -48,9 +53,16 @@
 
         # Inline helpers
         undo          = reset --soft HEAD^
-        unpushed      = "!git diff origin/$(git rev-parse --abbrev-ref HEAD)..HEAD"
-        unpushed-stat = "!f() { b=$(git rev-parse --abbrev-ref HEAD); c=$(git rev-list --count origin/$b..HEAD); git diff --stat origin/$b..HEAD; echo \" $c commit$( [ $c -eq 1 ] || echo s) total\"; }; f"
+        unpushed      = diff @{upstream}..HEAD
+        unpushed-stat = "!f() { c=$(git rev-list --count @{upstream}..HEAD); git diff --stat @{upstream}..HEAD; echo \" $c commit$( [ $c -eq 1 ] || echo s) total\"; }; f"
         track         = "!git branch --set-upstream-to=origin/$(git rev-parse --abbrev-ref HEAD)"
+        root          = rev-parse --show-toplevel
+
+        # Push
+        pushf = push --force-with-lease --force-if-includes
+
+        # Fetch and rebase on the default branch
+        sync = "!git fetch origin && git rebase origin/$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
 
         # Find out who is currently active on the repository
         who = shortlog --numbered --summary --email --no-merges --since="3 months"
@@ -61,6 +73,8 @@
         editor = vim
         ignorecase = false
         pager = delta
+        fsmonitor = true
+        untrackedCache = true
 
 [interactive]
         diffFilter = delta --color-only
@@ -70,9 +84,19 @@
         line-numbers = true
         hyperlinks = true
 
+[column]
+        ui = auto
+
+[branch]
+        sort = -committerdate
+
+[tag]
+        sort = version:refname
+
 [diff]
         algorithm = histogram
         colorMoved = default
+        colorMovedWS = allow-indentation-change
         mnemonicPrefix = true
         renames = true
 
@@ -80,6 +104,7 @@
         whitespace = nowarn
 
 [commit]
+        cleanup = scissors
         verbose = true
 
 [merge]
@@ -95,6 +120,7 @@
 [rebase]
         autoSquash = true
         autoStash = true
+        missingCommitsCheck = error
         updateRefs = true
 
 [rerere]
@@ -112,6 +138,12 @@
 
 [pull]
         rebase = true
+
+[log]
+        date = auto:human
+
+[stash]
+        showPatch = true
 
 [status]
         showStash = true

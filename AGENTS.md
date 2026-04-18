@@ -57,7 +57,7 @@ The Brewfile is the canonical list of all desired packages. On work machines whe
 ## Gotchas
 
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
-- **git rebase is interactive**: `git/gitconfig.symlink` aliases `rebase = rebase -i`. Never call `git rebase` expecting non-interactive behavior.
+- **Interactive rebase**: Use `git ri` for interactive rebase (`ri = rebase -i`). Plain `git rebase` is non-interactive.
 - **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
 
 ## Cross-Platform
