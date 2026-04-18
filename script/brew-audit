@@ -293,7 +293,12 @@ printf "  ${_BOLD}%d${_RST} formulae/casks not in Brewfile" "$_drift_total"
 if [[ ${#adoptable_casks[@]} -gt 0 ]]; then
   printf ", ${_BOLD}%d${_RST} adoptable apps" "${#adoptable_casks[@]}"
 fi
-printf "\n\n"
+printf "\n"
+
+printf "  ${_DIM}On a work machine? Some of these may have been installed by your\n"
+printf "  company (MDM, IT tooling, etc.) and don't belong in your personal\n"
+printf "  Brewfile. Use \"Review one by one\" and ignore those.${_RST}\n"
+printf "\n"
 
 _review_response="$(prompt_choice "Action" "Add all to Brewfile" "Review one by one" "Dismiss all (ignore)" "Quit")"
 printf "\n"
