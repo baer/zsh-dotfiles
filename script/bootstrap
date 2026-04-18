@@ -413,6 +413,28 @@ else
       brew bundle --file="$DOTFILES_ROOT/Brewfile"
   fi
 
+  # --- Drift check ---
+  # Count brew-installed packages not in Brewfile (fast, local)
+  _audit_count=0
+  _ignore_file="$HOME/.brew-audit-ignore"
+  while IFS= read -r leaf; do
+    [[ -f "$_ignore_file" ]] && grep -qx "$leaf" "$_ignore_file" 2>/dev/null && continue
+    grep -qx "brew '$leaf'" "$DOTFILES_ROOT/Brewfile" || _audit_count=$((_audit_count + 1))
+  done < <(brew leaves 2>/dev/null)
+  while IFS= read -r cask; do
+    echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $cask " && continue
+    [[ -f "$_ignore_file" ]] && grep -qx "$cask" "$_ignore_file" 2>/dev/null && continue
+    grep -qx "cask '$cask'" "$DOTFILES_ROOT/Brewfile" || _audit_count=$((_audit_count + 1))
+  done < <(brew list --cask 2>/dev/null)
+
+  if [[ $_audit_count -gt 0 ]]; then
+    if $VERBOSE; then
+      log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+    else
+      substep_log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+    fi
+  fi
+
   # --- Topic install scripts ---
   _install_count=0
   while IFS= read -r -d '' installer; do
