@@ -36,6 +36,49 @@ _is_in_cask_skip() {
   echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $pkg "
 }
 
+_remove_tap() {
+  local tap="$1"
+  spinner_start "brew untap $tap"
+  if brew untap "$tap" >> "$LOGFILE" 2>&1; then
+    spinner_stop ok "brew untap $tap"
+  else
+    spinner_stop fail "brew untap $tap (see .brew-audit.log)"
+  fi
+}
+
+_remove_formula() {
+  local formula="$1"
+  # Check for dependents before removing
+  local dependents
+  dependents="$(brew uses --installed "$formula" 2>/dev/null || true)"
+  if [[ -n "$dependents" ]]; then
+    log_warn "Other packages depend on $formula:"
+    printf "    %s\n" $dependents
+    local _confirm
+    _confirm="$(prompt_user "Remove anyway? [y/N]" "n")"
+    if [[ ! "$_confirm" =~ ^[yY]$ ]]; then
+      log_info "Skipped $formula"
+      return 0
+    fi
+  fi
+  spinner_start "brew uninstall $formula"
+  if brew uninstall "$formula" >> "$LOGFILE" 2>&1; then
+    spinner_stop ok "brew uninstall $formula"
+  else
+    spinner_stop fail "brew uninstall $formula (see .brew-audit.log)"
+  fi
+}
+
+_remove_cask() {
+  local cask="$1"
+  spinner_start "brew uninstall --cask $cask"
+  if brew uninstall --cask "$cask" >> "$LOGFILE" 2>&1; then
+    spinner_stop ok "brew uninstall --cask $cask"
+  else
+    spinner_stop fail "brew uninstall --cask $cask (see .brew-audit.log)"
+  fi
+}
+
 _add_to_ignore() {
   local pkg="$1"
   if [[ ! -f "$IGNORE_FILE" ]]; then
@@ -359,36 +402,39 @@ case "$_review_response" in
     # Drift taps
     for t in "${drift_taps[@]}"; do
       printf "  %s (tap)\n" "$t"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (untap)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
         1) _add_to_brewfile "tap" "$t" ;;
-        2) _add_to_ignore "$t" ;;
-        3) ;;
+        2) _remove_tap "$t" ;;
+        3) _add_to_ignore "$t" ;;
+        4) ;;
       esac
     done
 
     # Drift formulae
     for f in "${drift_formulae[@]}"; do
       printf "  %s\n" "$f"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
         1) _add_to_brewfile "brew" "$f" ;;
-        2) _add_to_ignore "$f" ;;
-        3) ;;
+        2) _remove_formula "$f" ;;
+        3) _add_to_ignore "$f" ;;
+        4) ;;
       esac
     done
 
     # Drift casks
     for c in "${drift_casks[@]}"; do
       printf "  %s\n" "$c"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
         1) _add_to_brewfile "cask" "$c" ;;
-        2) _add_to_ignore "$c" ;;
-        3) ;;
+        2) _remove_cask "$c" ;;
+        3) _add_to_ignore "$c" ;;
+        4) ;;
       esac
     done
 
