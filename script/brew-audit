@@ -1,0 +1,364 @@
+#!/usr/bin/env bash
+#
+# brew-audit
+#
+# Detects Brewfile drift (packages installed via brew but not listed in
+# the Brewfile) and manually installed apps that could be adopted into
+# Homebrew management.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+DOTFILES_ROOT=$(pwd -P)
+LOGFILE="$DOTFILES_ROOT/.brew-audit.log"
+
+# shellcheck source=lib/output.sh
+source "$DOTFILES_ROOT/script/lib/output.sh"
+
+# Source localrc to pick up HOMEBREW_BUNDLE_CASK_SKIP
+# shellcheck disable=SC1091
+[[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
+
+IGNORE_FILE="$HOME/.brew-audit-ignore"
+BREWFILE="$DOTFILES_ROOT/Brewfile"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_is_ignored() {
+  local pkg="$1"
+  [[ -f "$IGNORE_FILE" ]] && grep -qx "$pkg" "$IGNORE_FILE" 2>/dev/null
+}
+
+_is_in_cask_skip() {
+  local pkg="$1"
+  echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $pkg "
+}
+
+_add_to_ignore() {
+  local pkg="$1"
+  if [[ ! -f "$IGNORE_FILE" ]]; then
+    printf "# brew-audit-ignore\n#\n# Packages listed here are excluded from brew-audit drift detection.\n# Add formula or cask names, one per line.\n" > "$IGNORE_FILE"
+  fi
+  echo "$pkg" >> "$IGNORE_FILE"
+  log_success "Added $pkg to ignore list"
+}
+
+# Add a formula or cask to the Brewfile in the correct section, alphabetically.
+_add_to_brewfile() {
+  local type="$1" pkg="$2"
+  local line="$type '$pkg'"
+
+  # Find the last line of the section to determine insertion range
+  local section_pattern="^${type} '"
+  local last_section_line
+  last_section_line="$(grep -n "$section_pattern" "$BREWFILE" | tail -1 | cut -d: -f1)"
+
+  if [[ -z "$last_section_line" ]]; then
+    # Section doesn't exist — append to end of file
+    echo "" >> "$BREWFILE"
+    echo "$line" >> "$BREWFILE"
+  else
+    # Find correct alphabetical position within section
+    local inserted=false
+    local tmp
+    tmp="$(mktemp)"
+    while IFS= read -r existing; do
+      if [[ "$inserted" == false ]] && [[ "$existing" =~ ^${type}\ \' ]]; then
+        local existing_name
+        existing_name="$(echo "$existing" | awk -F"'" '{print $2}')"
+        if [[ "$pkg" < "$existing_name" ]]; then
+          echo "$line" >> "$tmp"
+          inserted=true
+        fi
+      fi
+      echo "$existing" >> "$tmp"
+    done < "$BREWFILE"
+
+    if [[ "$inserted" == false ]]; then
+      # Append after the last entry in the section
+      sed -i '' "${last_section_line}a\\
+${line}
+" "$BREWFILE"
+    else
+      mv "$tmp" "$BREWFILE"
+    fi
+    rm -f "$tmp"
+  fi
+
+  log_success "Added $line to Brewfile"
+}
+
+# Remove a cask from HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc
+_remove_from_skip_list() {
+  local cask="$1"
+  local localrc="$HOME/.localrc"
+
+  [[ -z "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]] && return 0
+
+  # Remove the cask from the space-separated list
+  local new_skip
+  new_skip="$(echo "$HOMEBREW_BUNDLE_CASK_SKIP" | tr ' ' '\n' | grep -vx "$cask" | tr '\n' ' ' | sed 's/ $//')"
+
+  if [[ -f "$localrc" ]] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
+    if [[ -z "$new_skip" ]]; then
+      # Remove the line entirely
+      sed -i '' '/^export HOMEBREW_BUNDLE_CASK_SKIP=/d' "$localrc"
+    else
+      sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|export HOMEBREW_BUNDLE_CASK_SKIP=\"$new_skip\"|" "$localrc"
+    fi
+  fi
+
+  export HOMEBREW_BUNDLE_CASK_SKIP="$new_skip"
+}
+
+# Adopt a manually installed app into brew management.
+# Trashes the manual copy, runs brew install, updates Brewfile and skip list.
+# Args: cask_name app_name
+_adopt_cask() {
+  local cask="$1" app_name="$2"
+  local app_path="/Applications/$app_name"
+
+  # Check if running
+  local app_base="${app_name%.app}"
+  if pgrep -fi "$app_base" > /dev/null 2>&1; then
+    log_warn "$app_base is running. Please quit it before continuing."
+    printf "    Press Enter when ready, or 's' to skip... "
+    local _wait_response
+    read -r _wait_response
+    if [[ "$_wait_response" == "s" ]]; then
+      log_info "Skipped $cask"
+      return 1
+    fi
+    # Re-check
+    if pgrep -fi "$app_base" > /dev/null 2>&1; then
+      log_error "$app_base is still running — skipping"
+      return 1
+    fi
+  fi
+
+  # Trash the manual install
+  if [[ -d "$app_path" ]]; then
+    spinner_start "Moving $app_name to Trash"
+    if mv "$app_path" "$HOME/.Trash/" 2>/dev/null; then
+      spinner_stop ok "Moved $app_name to Trash"
+    else
+      spinner_stop fail "Could not move $app_name to Trash (permissions?)"
+      log_info "Skipping adoption of $cask"
+      return 1
+    fi
+  fi
+
+  # Install via brew
+  spinner_start "brew install --cask $cask"
+  if brew install --cask "$cask" >> "$LOGFILE" 2>&1; then
+    spinner_stop ok "brew install --cask $cask"
+  else
+    spinner_stop fail "brew install --cask $cask (see .brew-audit.log)"
+    return 1
+  fi
+
+  # Update Brewfile if not already listed
+  if ! grep -qx "cask '$cask'" "$BREWFILE"; then
+    _add_to_brewfile "cask" "$cask"
+  fi
+
+  # Remove from skip list if present
+  _remove_from_skip_list "$cask"
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Traps
+# ---------------------------------------------------------------------------
+
+_on_exit() { _spinner_cleanup; }
+trap '_on_exit' EXIT
+
+# ---------------------------------------------------------------------------
+# Phase 1: Brew Drift
+# ---------------------------------------------------------------------------
+
+: > "$LOGFILE"
+
+printf "\n  ${_BOLD}brew-audit${_RST}\n\n"
+
+# Collect drifted formulae
+drift_formulae=()
+while IFS= read -r leaf; do
+  _is_ignored "$leaf" && continue
+  grep -qx "brew '$leaf'" "$BREWFILE" || drift_formulae+=("$leaf")
+done < <(brew leaves 2>/dev/null)
+
+# Collect drifted casks
+drift_casks=()
+while IFS= read -r cask; do
+  _is_in_cask_skip "$cask" && continue
+  _is_ignored "$cask" && continue
+  grep -qx "cask '$cask'" "$BREWFILE" || drift_casks+=("$cask")
+done < <(brew list --cask 2>/dev/null)
+
+# Display drift results
+_drift_total=$(( ${#drift_formulae[@]} + ${#drift_casks[@]} ))
+
+if [[ ${#drift_formulae[@]} -gt 0 ]]; then
+  printf "  Formulae not in Brewfile (%d):\n" "${#drift_formulae[@]}"
+  for f in "${drift_formulae[@]}"; do
+    printf "    %s %s\n" "$_INFO" "$f"
+  done
+  printf "\n"
+fi
+
+if [[ ${#drift_casks[@]} -gt 0 ]]; then
+  printf "  Casks not in Brewfile (%d):\n" "${#drift_casks[@]}"
+  for c in "${drift_casks[@]}"; do
+    printf "    %s %s\n" "$_INFO" "$c"
+  done
+  printf "\n"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 2: Adoptable Apps (opt-in)
+# ---------------------------------------------------------------------------
+
+adoptable_casks=()
+adoptable_apps=()
+
+if [[ "${INTERACTIVE:-true}" == true ]]; then
+  _scan_response="$(prompt_user "Scan /Applications for adoptable apps? This takes a moment. [y/N]" "n")"
+  printf "\n"
+else
+  _scan_response="n"
+fi
+
+if [[ "$_scan_response" =~ ^[yY]$ ]]; then
+  spinner_start "Scanning /Applications"
+
+  # Get brew-managed casks for exclusion
+  _brew_casks="$(brew list --cask 2>/dev/null || true)"
+
+  while IFS= read -r app_dir; do
+    app_name="$(basename "$app_dir")"
+    [[ "$app_name" != *.app ]] && continue
+
+    # Derive candidate cask name
+    candidate="$(echo "${app_name%.app}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')"
+
+    [[ -z "$candidate" ]] && continue
+
+    # Skip if already brew-managed
+    echo "$_brew_casks" | grep -qx "$candidate" && continue
+
+    # Skip if ignored
+    _is_ignored "$candidate" && continue
+
+    # Check if a brew cask exists for this candidate
+    if brew info --cask "$candidate" > /dev/null 2>&1; then
+      adoptable_casks+=("$candidate")
+      adoptable_apps+=("$app_name")
+    fi
+  done < <(find /Applications -maxdepth 1 -name "*.app" -type d 2>/dev/null)
+
+  spinner_stop ok "Scanned /Applications"
+
+  if [[ ${#adoptable_casks[@]} -gt 0 ]]; then
+    printf "\n  Manually installed apps with a brew cask available (%d):\n" "${#adoptable_casks[@]}"
+    for i in "${!adoptable_casks[@]}"; do
+      printf "    %s %s → cask '%s'\n" "$_INFO" "${adoptable_apps[$i]}" "${adoptable_casks[$i]}"
+    done
+    printf "\n"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 3: Interactive Review
+# ---------------------------------------------------------------------------
+
+_total=$(( _drift_total + ${#adoptable_casks[@]} ))
+
+if [[ $_total -eq 0 ]]; then
+  log_success "Brewfile is in sync — nothing to do"
+  printf "\n"
+  exit 0
+fi
+
+if [[ "${INTERACTIVE:-true}" != true ]]; then
+  log_info "$_total packages not in Brewfile (run interactively to resolve)"
+  exit 0
+fi
+
+printf "  ${_BOLD}%d${_RST} formulae/casks not in Brewfile" "$_drift_total"
+if [[ ${#adoptable_casks[@]} -gt 0 ]]; then
+  printf ", ${_BOLD}%d${_RST} adoptable apps" "${#adoptable_casks[@]}"
+fi
+printf "\n\n"
+
+_review_response="$(prompt_choice "Action" "Add all to Brewfile" "Review one by one" "Dismiss all (ignore)" "Quit")"
+printf "\n"
+
+case "$_review_response" in
+  4)
+    exit 0
+    ;;
+  3)
+    # Dismiss all
+    for f in "${drift_formulae[@]}"; do _add_to_ignore "$f"; done
+    for c in "${drift_casks[@]}"; do _add_to_ignore "$c"; done
+    for c in "${adoptable_casks[@]}"; do _add_to_ignore "$c"; done
+    ;;
+  1)
+    # Add all drift items to Brewfile
+    for f in "${drift_formulae[@]}"; do _add_to_brewfile "brew" "$f"; done
+    for c in "${drift_casks[@]}"; do _add_to_brewfile "cask" "$c"; done
+    # Adopt all adoptable apps
+    for i in "${!adoptable_casks[@]}"; do
+      _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true
+    done
+    ;;
+  2)
+    # Review one by one
+    # Drift formulae
+    for f in "${drift_formulae[@]}"; do
+      printf "  %s\n" "$f"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$_item_response" in
+        1) _add_to_brewfile "brew" "$f" ;;
+        2) _add_to_ignore "$f" ;;
+        3) ;;
+      esac
+    done
+
+    # Drift casks
+    for c in "${drift_casks[@]}"; do
+      printf "  %s\n" "$c"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$_item_response" in
+        1) _add_to_brewfile "cask" "$c" ;;
+        2) _add_to_ignore "$c" ;;
+        3) ;;
+      esac
+    done
+
+    # Adoptable apps
+    for i in "${!adoptable_casks[@]}"; do
+      printf "  %s → cask '%s'\n" "${adoptable_apps[$i]}" "${adoptable_casks[$i]}"
+      _item_response="$(prompt_choice "Action" "Remove manual copy and install via brew" "Just add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$_item_response" in
+        1) _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true ;;
+        2)
+          _add_to_brewfile "cask" "${adoptable_casks[$i]}"
+          log_warn "Manual copy still in /Applications — next brew bundle may skip or conflict"
+          ;;
+        3) _add_to_ignore "${adoptable_casks[$i]}" ;;
+        4) ;;
+      esac
+    done
+    ;;
+esac
+
+printf "\n  ${_GREEN}${_BOLD}✓${_RST} ${_DIM}Done${_RST}\n\n"
