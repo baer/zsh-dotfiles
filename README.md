@@ -74,7 +74,7 @@ Defined in `zsh/aliases.zsh`:
 
 Git config lives in `git/gitconfig.symlink` with delta as the diff pager and 20+ aliases. Notable commands:
 
-- `git up` / `git reup` — Pull with a log of what changed (merge or rebase)
+- `git up` — Update default branch from origin and return to current branch (pass `-r` to rebase)
 - `git nuke <branch>` — Delete a branch locally and on origin
 - `git credit "Name" email` — Amend last commit with a different author
 - `git edit-new` — Open all new/modified files in `$EDITOR`
