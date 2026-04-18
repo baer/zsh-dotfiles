@@ -94,6 +94,11 @@ _current_phase=""
 _on_error() {
   _spinner_cleanup
   log_error_context "$LOGFILE" "$_current_phase"
+  if [[ "$_current_phase" == "Installing Software" ]] \
+     && [[ -x "$DOTFILES_ROOT/script/brew-health" ]]; then
+    printf "\n"
+    "$DOTFILES_ROOT/script/brew-health" || true
+  fi
 }
 
 _on_exit() {
