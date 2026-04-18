@@ -1,34 +1,120 @@
 #!/bin/sh
 #
-# Usage: git-up
-#        git-reup
+# Usage: git up [-r]
 #
-# Like git-pull but show a short and sexy log of changes
-# immediately after merging (git-up) or rebasing (git-reup).
+# Updates the default branch (main/master) from origin, then
+# returns to the branch you were on.  Dirty working trees are
+# auto-stashed and restored afterward.
 #
-# Inspired by Kyle Neath's `git up' alias:
-# http://gist.github.com/249223
+#   -r   After updating, interactively rebase the current branch
+#        onto the default branch.
 #
-# Stolen from Ryan Tomayko
-# http://github.com/rtomayko/dotfiles/blob/rtomayko/bin/git-up
+# Changelog of pulled commits is printed after the update.
 
 set -e
 
-# when invoked as git-reup, run as `git pull --rebase'
-test "$(basename "$0")" = "git-reup" &&
-set -- --rebase "$@"
+# -- helpers ---------------------------------------------------------
 
-git pull "$@"
+die()  { printf 'git-up: %s\n' "$1" >&2; exit 1; }
+warn() { printf 'git-up: %s\n' "$1" >&2; }
 
-# show diffstat of all changes if we're pulling with --rebase. not
-# sure why git-pull only does this when merging.
-test "$(basename "$0")" = "git-reup" && {
-    echo "Diff:"
-    git --no-pager diff --color --stat HEAD@{1}.. |
-    sed 's/^/ /'
+# Detect the default branch: remote HEAD first, then local fallback.
+detect_default_branch() {
+  # 1. Ask the remote
+  ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null) && {
+    echo "${ref#refs/remotes/origin/}"
+    return
+  }
+  # 2. Local fallback
+  git show-ref --verify --quiet refs/heads/main   2>/dev/null && { echo main;   return; }
+  git show-ref --verify --quiet refs/heads/master  2>/dev/null && { echo master; return; }
+  return 1
 }
 
-# show an abbreviated commit log of stuff that was just merged.
-echo "Log:"
-git log --color --pretty=oneline --abbrev-commit HEAD@{1}.. |
-sed 's/^/  /'
+# True if a rebase, merge, or cherry-pick is in progress.
+has_inflight_operation() {
+  git_dir=$(git rev-parse --git-dir)
+  [ -d "$git_dir/rebase-merge" ]  || \
+  [ -d "$git_dir/rebase-apply" ]  || \
+  [ -f "$git_dir/MERGE_HEAD" ]    || \
+  [ -f "$git_dir/CHERRY_PICK_HEAD" ]
+}
+
+# -- parse flags -----------------------------------------------------
+
+rebase=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -r) rebase=true; shift ;;
+    *)  die "unknown option: $1" ;;
+  esac
+done
+
+# -- preflight -------------------------------------------------------
+
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null) \
+  || die "not on a branch (detached HEAD)"
+
+has_inflight_operation \
+  && die "resolve the in-progress rebase/merge/cherry-pick first"
+
+default_branch=$(detect_default_branch) \
+  || die "could not determine default branch"
+
+# -- stash (if needed) -----------------------------------------------
+
+did_stash=false
+if [ -n "$(git status --porcelain)" ]; then
+  git stash push -m "git-up: auto-stash from $current_branch" \
+    || die "could not stash changes — resolve working tree first"
+  did_stash=true
+fi
+
+# -- update default branch -------------------------------------------
+
+if [ "$current_branch" = "$default_branch" ]; then
+  old_head=$(git rev-parse HEAD)
+  git pull --prune
+  new_head=$(git rev-parse HEAD)
+else
+  git checkout "$default_branch"
+  old_head=$(git rev-parse HEAD)
+  git pull --prune
+  new_head=$(git rev-parse HEAD)
+  git checkout "$current_branch" || {
+    warn "could not return to '$current_branch' — staying on $default_branch"
+    # best-effort stash restore before bailing
+    if $did_stash; then
+      warn "your stash is preserved — run 'git stash pop' when ready"
+    fi
+    exit 1
+  }
+fi
+
+# -- changelog -------------------------------------------------------
+
+if [ "$old_head" != "$new_head" ]; then
+  echo "Log:"
+  git log --color --pretty=oneline --abbrev-commit "$old_head".."$new_head" \
+    | sed 's/^/  /'
+fi
+
+# -- rebase (if -r) --------------------------------------------------
+
+if $rebase && [ "$current_branch" != "$default_branch" ]; then
+  git rebase "$default_branch" || true   # allow interactive rebase to pause
+
+  # Check if rebase is still in progress (conflicts / edit stop)
+  if has_inflight_operation; then
+    if $did_stash; then
+      warn "rebase paused — run 'git stash pop' after completing the rebase"
+    fi
+    exit 1
+  fi
+fi
+
+# -- restore stash ----------------------------------------------------
+
+if $did_stash; then
+  git stash pop || warn "stash applied with conflicts — resolve manually"
+fi
