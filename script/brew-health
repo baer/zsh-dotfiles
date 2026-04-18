@@ -209,39 +209,40 @@ for f in data.get('formulae', []):
 # ---------------------------------------------------------------------------
 
 _check_orphaned_casks() {
-  local orphaned=()
+  local json
+  json="$(brew info --cask --json=v2 --installed 2>/dev/null || true)"
 
-  while IFS= read -r cask; do
-    [[ -z "$cask" ]] && continue
-    # Get the expected app artifact path
-    local app_name
-    app_name="$(brew info --cask --json=v2 "$cask" 2>/dev/null | python3 -c "
-import json, sys
+  if [[ -z "$json" ]]; then
+    _check_pass "Cask app artifacts present (could not query)"
+    return 0
+  fi
+
+  local orphaned
+  orphaned="$(echo "$json" | python3 -c "
+import json, sys, os
 data = json.load(sys.stdin)
 for c in data.get('casks', []):
+    name = c.get('token', c.get('name', ['unknown'])[0] if isinstance(c.get('name'), list) else 'unknown')
     for a in c.get('artifacts', []):
         if isinstance(a, dict) and 'app' in a:
             for app in a['app']:
-                print(app)
-                sys.exit(0)
+                path = '/Applications/' + app
+                if not os.path.exists(path):
+                    print(f'{name}|{app}')
+                break
 " 2>/dev/null || true)"
 
-    if [[ -n "$app_name" ]] && [[ ! -e "/Applications/$app_name" ]]; then
-      orphaned+=("$cask|$app_name")
-    fi
-  done < <(brew list --cask 2>/dev/null)
-
-  if [[ ${#orphaned[@]} -eq 0 ]]; then
+  if [[ -z "$orphaned" ]]; then
     _check_pass "Cask app artifacts present"
     return 0
   fi
 
   _check_fail "Orphaned cask metadata"
-  for entry in "${orphaned[@]}"; do
+  while IFS= read -r entry; do
     local cask="${entry%%|*}" app="${entry#*|}"
     _check_detail "$cask — /Applications/$app missing"
     _check_detail "  run: brew uninstall --cask $cask"
-  done
+  done <<< "$orphaned"
   return 1
 }
 
