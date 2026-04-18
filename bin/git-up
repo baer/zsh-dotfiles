@@ -106,7 +106,7 @@ fi
 # -- rebase (if -r) --------------------------------------------------
 
 if $rebase && [ "$current_branch" != "$default_branch" ]; then
-  git rebase "$default_branch" || true   # allow interactive rebase to pause
+  git rebase -i "$default_branch" || true   # allow interactive rebase to pause
 
   # Check if rebase is still in progress (conflicts / edit stop)
   if has_inflight_operation; then

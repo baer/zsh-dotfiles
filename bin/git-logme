@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# Usage: git logme [<git-log-options>]
+#
+# Shows commits authored by you across all your configured git
+# identities.  Discovers user.name and user.email values from
+# every config file referenced by your gitconfig (global, local,
+# and all include/includeIf paths), then passes them as multiple
+# --author flags to git log (which ORs them together).
+#
+# Any extra arguments are forwarded to git log, so you can do:
+#   git logme --oneline --since="2 weeks ago"
+#   git logme --stat -10
+
+set -e
+
+tmpfile=$(mktemp)
+trap 'rm -f "$tmpfile"' EXIT
+
+# -- helpers -----------------------------------------------------------
+
+# Append user.name and user.email values from a config file to $tmpfile.
+extract_identities() {
+  [ -f "$1" ] || return 0
+  git config --file "$1" --get-all user.name  2>/dev/null >> "$tmpfile" || true
+  git config --file "$1" --get-all user.email 2>/dev/null >> "$tmpfile" || true
+}
+
+# -- collect identities ------------------------------------------------
+
+# 1. Global config file
+global_config="$(git config --global --list --show-origin 2>/dev/null \
+  | head -1 | cut -f1 | sed 's/^file://')" || true
+[ -n "$global_config" ] && extract_identities "$global_config"
+
+# 2. All include / includeIf paths referenced in the global config.
+#    We parse the raw file so that conditional includes (which may not
+#    be active for the current working directory) are still discovered.
+if [ -n "$global_config" ] && [ -f "$global_config" ]; then
+  sed -n 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*//p' "$global_config" \
+    | sed "s|^~|$HOME|" \
+    | while IFS= read -r path; do
+        extract_identities "$path"
+      done
+fi
+
+# 3. Repo-local config (if inside a git repo)
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  extract_identities "$(git rev-parse --git-dir)/config"
+fi
+
+# -- deduplicate -------------------------------------------------------
+
+identities=$(sort -u "$tmpfile" | grep -v '^$' || true)
+
+if [ -z "$identities" ]; then
+  echo "git-logme: no user identities found in git config" >&2
+  exit 1
+fi
+
+# -- build git log command ---------------------------------------------
+
+# Multiple --author flags are OR'd by git log.
+author_args=""
+while IFS= read -r id; do
+  author_args="$author_args --author=\"$id\""
+done <<EOF
+$identities
+EOF
+
+eval git log $author_args '"$@"'

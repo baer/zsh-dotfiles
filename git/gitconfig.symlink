@@ -7,86 +7,53 @@
 [includeIf "gitdir:~/workspace/**/"]
         path = ~/.gitconfig.gusto
 
-[hub]
-        protocol = https
-
 [alias]
-        # Display concise repository status
-        # Delete all local branches that have been merged into HEAD
-        dall = !git branch --merged | grep -v '^*' | grep -v 'main' | xargs git branch -d
+        # Branch management
+        b   = branch
+        sw  = switch
+        swc = switch -c
+        rs  = restore
 
-        # shortcuts
-        a  = add -A .
-        b  = branch
-        c  = commit
-        cb = "!git rev-parse --abbrev-ref HEAD | tr -d '\\n' | pbcopy && git rev-parse --abbrev-ref HEAD"
-        co = checkout
-        s  = status -sb
+        # Staging & committing
+        a     = add -A
+        c     = commit
+        amend = commit --amend --no-edit
+        fixup = commit --fixup
+
+        # Status & info
+        s     = status -sb
+        # Copy the branch name to the clipboard
+        cb    = "!git rev-parse --abbrev-ref HEAD | tr -d '\\n' | pbcopy && git rev-parse --abbrev-ref HEAD"
+        last  = switch -
 
         # Diffs
         sdiff = diff --shortstat
         ndiff = diff --name-status
+        wdiff = diff --word-diff
         count = !git shortlog -sn
-        cdiff = "!sh -c ' git log --left-right --graph --cherry-pick --oneline main...$(git describe --abbrev=0 --tags)'"
 
         # Logs
-        plog  = log --graph --pretty=format:'%Cred%h%Creset %an: %s - %Creset %C(yellow)%d%Creset %Cgreen(%cr)%Creset' --abbrev-commit --date=relative
-        logme = log --author="Eric"
-        blog  = log --graph --decorate --pretty=oneline --abbrev-commit
+        l   = log --oneline --graph -20
+        la  = log --oneline --graph --all -20
+        lst = log --stat --oneline -10
 
-        # Pull/Push
-        pm  = pull origin main
-        pd  = pull origin develop
-        pum = push origin main
-        pud = push origin develop
+        # Stash
+        stash-all = stash push --include-untracked
 
-        # Safeguards
-        rebase = rebase -i
-        blame = blame -w --no-merges
+        # Cleanup — delete local branches whose remote tracking branch is gone
+        gone = "!git fetch -p && git for-each-ref --format '%(refname:short) %(upstream:track)' refs/heads | awk '$2 == \"[gone]\" {print $1}' | xargs git branch -D"
 
-        # Custom graph log (append any tree-ish)
-        graph = log --pretty=nice --date-order --graph
-        # Custom graph log for all branches
-        grapha = log --pretty=nice --date-order --graph --all
+        # Blame (ignoring whitespace and merge commits)
+        blamew = blame -w --no-merges
 
-        # Custom pretty log
-        logp = log --pretty=nice --date-order
-
-        # Diffstat log
-        logst = log --stat
-        # Short format diffstat log
-        logsf = log --stat --format=oneline --abbrev-commit
-
-        # Fetch and checkout a GitHub Pull Request from a remote (defaults to `origin`)
-        # Use: `git gh-pr 123` or `git gh-pr 123 upstream`
-        gh-pr = !bash -c 'git fetch -fu ${2:-origin} refs/pull/$1/head:gh-pr/$1 && git checkout gh-pr/$1' -
+        # Inline helpers
+        undo          = reset --soft HEAD^
+        unpushed      = "!git diff origin/$(git rev-parse --abbrev-ref HEAD)..HEAD"
+        unpushed-stat = "!f() { b=$(git rev-parse --abbrev-ref HEAD); c=$(git rev-list --count origin/$b..HEAD); git diff --stat origin/$b..HEAD; echo \" $c commit$( [ $c -eq 1 ] || echo s) total\"; }; f"
+        track         = "!git branch --set-upstream-to=origin/$(git rev-parse --abbrev-ref HEAD)"
 
         # Find out who is currently active on the repository
-        # Displays committers in descending order of number of commits
         who = shortlog --numbered --summary --email --no-merges --since="3 months"
-
-        # Inline helpers (formerly bin/ scripts)
-        undo     = reset --soft HEAD^
-        unpushed = "!git diff origin/$(git rev-parse --abbrev-ref HEAD)..HEAD"
-        unpushed-stat = "!f() { b=$(git rev-parse --abbrev-ref HEAD); c=$(git rev-list --count origin/$b..HEAD); git diff --stat origin/$b..HEAD; echo \" $c commit$( [ $c -eq 1 ] || echo s) total\"; }; f"
-        promote  = push -u origin HEAD
-        track    = "!git branch --set-upstream-to=origin/$(git rev-parse --abbrev-ref HEAD)"
-
-[color]
-        diff = auto
-        status = auto
-        branch = auto
-        ui = true
-
-[color "branch"]
-        current = yellow reverse
-        local = yellow
-        remote = green
-
-[color "status"]
-        added = green
-        changed = yellow
-        untracked = red
 
 [core]
         attributesfile = ~/.gitattributes
@@ -103,36 +70,63 @@
         line-numbers = true
         hyperlinks = true
 
+[diff]
+        algorithm = histogram
+        colorMoved = default
+        mnemonicPrefix = true
+        renames = true
+
 [apply]
         whitespace = nowarn
 
+[commit]
+        verbose = true
+
 [merge]
-        # Include summaries of merged commits in newly created merge commit messages
         log = true
         conflictstyle = zdiff3
 
 [mergetool]
         keepBackup = false
 
-[branch "main"]
-        remote = origin
-        merge = refs/heads/main
-
 [difftool]
         prompt = false
 
-[help]
-        autocorrect = 0
+[rebase]
+        autoSquash = true
+        autoStash = true
+        updateRefs = true
+
+[rerere]
+        enabled = true
+        autoUpdate = true
+
+[fetch]
+        prune = true
+        prunetags = true
+        all = true
+        fsckObjects = true
 
 [push]
-        # See `git help config` (search for push.default)
-        # for more information on different options of the below setting.
-        #
-        # Setting to git 2.0 default to suppress warning message
-        default = simple
-[credential]
-	helper = osxkeychain
-[init]
-	defaultBranch = main
+        autoSetupRemote = true
+
 [pull]
-	rebase = true
+        rebase = true
+
+[status]
+        showStash = true
+
+[help]
+        autocorrect = prompt
+
+[transfer]
+        fsckObjects = true
+
+[receive]
+        fsckObjects = true
+
+[credential]
+        helper = osxkeychain
+
+[init]
+        defaultBranch = main
