@@ -556,14 +556,30 @@ if $IS_MACOS && ! $SKIP_DEPS; then
   if $_drift_skipped; then
     _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
   elif [[ $_audit_count -gt 0 ]]; then
-    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run script/brew-audit")
+    _preview="${_drift_names[*]:0:5}"
+    _msg="$_audit_count packages not in Brewfile: ${_preview// /, }"
+    if [[ $_audit_count -gt 5 ]]; then
+      _msg+=" ..."
+    fi
+    _msg+=" — run script/brew-audit"
+    _ACTIONABLE_WARNINGS+=("$_msg")
   fi
 
   if $VERBOSE; then
-    [[ $_audit_count -gt 0 ]] && log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+    if $_drift_skipped; then
+      log_warn "drift check skipped: brew query failed (Homebrew may be broken)"
+    elif [[ $_audit_count -gt 0 ]]; then
+      _preview="${_drift_names[*]:0:5}"
+      _msg="$_audit_count packages not in Brewfile: ${_preview// /, }"
+      [[ $_audit_count -gt 5 ]] && _msg+=" ..."
+      log_warn "$_msg — run script/brew-audit"
+    fi
   else
-    if [[ $_audit_count -gt 0 ]]; then
-      substep_stop warn "drift check ($_audit_count untracked)"
+    if $_drift_skipped; then
+      substep_stop warn "drift check (skipped — brew query failed)"
+    elif [[ $_audit_count -gt 0 ]]; then
+      _sub_preview="${_drift_names[*]:0:3}"
+      substep_stop warn "drift check ($_audit_count untracked: ${_sub_preview// /, })"
     else
       substep_stop ok "drift check"
     fi
