@@ -36,6 +36,7 @@ alias pubkey="pbcopy < ~/.ssh/id_ed25519.pub && printf '=> Public key copied to 
 alias gsize="pbpaste | gzip | wc -c"
 
 # Update forked repo from upstream
+unalias updatefork 2>/dev/null
 updatefork() {
   local branch
   branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')" \
