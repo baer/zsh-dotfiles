@@ -59,6 +59,7 @@ The Brewfile is the canonical list of all desired packages. On work machines whe
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
 - **Interactive rebase**: Use `git ri` for interactive rebase (`ri = rebase -i`). Plain `git rebase` is non-interactive.
 - **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
+- **fsmonitor + Homebrew**: `core.fsmonitor=true` is enabled globally for performance, but disabled in Homebrew tap repos via `includeIf` + `git/gitconfig-homebrew.symlink`. Without this override, fsmonitor daemons inherit Homebrew's update lock FD and permanently block `brew update`. If you see `lockf: already locked` errors, check: `lsof "$(brew --prefix)/var/homebrew/locks/update"`.
 
 ## Cross-Platform
 

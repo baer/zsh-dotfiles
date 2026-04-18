@@ -163,3 +163,13 @@
 
 [init]
         defaultBranch = main
+
+# Homebrew runs git inside tap repos during `brew update`.
+# With core.fsmonitor=true, git auto-starts fsmonitor daemons that can
+# inherit Homebrew's update lock FD, permanently blocking future updates.
+# Disable fsmonitor for Homebrew tap repos only.
+[includeIf "gitdir:/opt/homebrew/Library/Taps/"]
+        path = ~/.gitconfig-homebrew
+
+[includeIf "gitdir:/usr/local/Homebrew/Library/Taps/"]
+        path = ~/.gitconfig-homebrew
