@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-#
-# Deprecated — use script/bootstrap instead.
-
-printf "Note: script/install is deprecated. Use script/bootstrap instead.\n" >&2
-exec "$(dirname "$0")/bootstrap" "$@"

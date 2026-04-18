@@ -462,7 +462,6 @@ fi
 
 _install_count=0
 while IFS= read -r -d '' installer; do
-  [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
   if $VERBOSE; then
     log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
     sh -c "$installer" 2>&1 | tee -a "$LOGFILE"

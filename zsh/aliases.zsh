@@ -15,6 +15,17 @@ alias ...="cd ../.."
 alias reload!='. ~/.zshrc'
 alias path='echo -e ${PATH//:/\\n}'
 
+# Start an HTTP server in the current directory
+serve() {
+  local port="${1:-8000}"
+  if (( $+commands[npx] )); then
+    npx -y serve -l "${port}" -o
+  else
+    open "http://localhost:${port}/"
+    python3 -m http.server "${port}"
+  fi
+}
+
 # IP addresses
 alias ip="dig +short myip.opendns.com @resolver1.opendns.com"
 

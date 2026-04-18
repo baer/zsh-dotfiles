@@ -12,7 +12,7 @@ Ask the user which files are needed:
 - `path.zsh` -- for PATH additions (loaded first, before other .zsh files)
 - `env.zsh` -- for environment variables
 - `completion.zsh` -- for shell completions (loaded last, after compinit)
-- `install.sh` -- for one-time setup (run by `script/install`, uses .sh extension to avoid auto-sourcing)
+- `install.sh` -- for one-time setup (run by `script/bootstrap`, uses .sh extension to avoid auto-sourcing)
 - `*.symlink` -- for files that should be symlinked to $HOME
 
 Create the directory and requested files with appropriate boilerplate.
