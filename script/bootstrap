@@ -119,7 +119,7 @@ log_header "$DOTFILES_ROOT"
 _current_phase="Preflight"
 
 if $DRY_RUN; then
-  log_phase "1/4" "Preflight"
+  log_phase "1/5" "Preflight"
   log_info "Dry run — previewing changes"
   printf "\n"
 
@@ -142,7 +142,7 @@ if $DRY_RUN; then
   exit 0
 fi
 
-phase_start "1/4" "Preflight"
+phase_start "1/5" "Preflight"
 
 _preflight_detail=""
 
@@ -173,7 +173,7 @@ _current_phase="Git config"
 if $SKIP_GIT; then
   summary_add skip "Git config" "skipped (--skip-git)" "<1s"
 else
-  phase_start "2/4" "Git Config"
+  phase_start "2/5" "Git Config"
 
   gitconfig_local="$DOTFILES_ROOT/git/gitconfig.local.symlink"
 
@@ -217,7 +217,7 @@ fi
 # ---------------------------------------------------------------------------
 
 _current_phase="Symlinks"
-phase_start "3/4" "Symlinks"
+phase_start "3/5" "Symlinks"
 
 _link_count=0
 _skip_count=0
@@ -345,9 +345,9 @@ else
   _phase_timer_start "Installing Software"
 
   if $VERBOSE; then
-    log_phase "4/4" "Installing Software"
+    log_phase "4/5" "Installing Software"
   else
-    phase_start "4/4" "Installing Software"
+    phase_start "4/5" "Installing Software"
     phase_end_deferred
   fi
 
@@ -435,30 +435,35 @@ else
     fi
   fi
 
-  # --- Topic install scripts ---
-  _install_count=0
-  while IFS= read -r -d '' installer; do
-    [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
-    if $VERBOSE; then
-      log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
-      sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
-    else
-      sh -c "$installer" >> "$LOGFILE" 2>&1
-    fi
-    _install_count=$((_install_count + 1))
-  done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
-
-  if [[ $_install_count -gt 0 ]]; then
-    if $VERBOSE; then
-      log_success "install scripts ($_install_count)"
-    else
-      substep_log_success "install scripts ($_install_count)"
-    fi
-  fi
-
   if ! $VERBOSE; then
     phase_resolve ok "installed"
   fi
 
   summary_add ok "Installing Software" "installed" "$(_phase_timer_elapsed "Installing Software")"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 5: Topic Install Scripts
+# ---------------------------------------------------------------------------
+
+_current_phase="Install Scripts"
+
+_install_count=0
+while IFS= read -r -d '' installer; do
+  [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
+  if $VERBOSE; then
+    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
+    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
+  else
+    sh -c "$installer" >> "$LOGFILE" 2>&1
+  fi
+  _install_count=$((_install_count + 1))
+done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
+
+if [[ $_install_count -gt 0 ]]; then
+  if $VERBOSE; then
+    log_success "install scripts ($_install_count)"
+  else
+    substep_log_success "install scripts ($_install_count)"
+  fi
 fi
