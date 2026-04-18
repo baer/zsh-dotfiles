@@ -14,7 +14,4 @@ if [ -f "$GHOSTTY_CONFIG_DIR/config" ] && [ ! -L "$GHOSTTY_CONFIG_DIR/config" ];
   mv "$GHOSTTY_CONFIG_DIR/config" "$GHOSTTY_CONFIG_DIR/config.backup"
 fi
 
-if [ ! -L "$GHOSTTY_CONFIG_DIR/config" ]; then
-  ln -s "$DOTFILES_ROOT/ghostty/config" "$GHOSTTY_CONFIG_DIR/config"
-  echo "  Linked Ghostty config"
-fi
+ln -sf "$DOTFILES_ROOT/ghostty/config" "$GHOSTTY_CONFIG_DIR/config"

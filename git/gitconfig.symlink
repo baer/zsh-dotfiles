@@ -70,6 +70,7 @@
 [core]
         attributesfile = ~/.gitattributes
         excludesfile = ~/.gitignore
+        # Vim for git (fast terminal editor; EDITOR=code is for general use)
         editor = vim
         ignorecase = false
         pager = delta

@@ -438,8 +438,48 @@ else
     _brew_summary="all up to date"
   fi
 
-  # --- Drift check ---
-  # Count brew-installed packages not in Brewfile (fast, local)
+  if $VERBOSE; then
+    log_success "$_brew_summary"
+  else
+    phase_resolve ok "$_brew_summary"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 5: Topic Install Scripts
+# ---------------------------------------------------------------------------
+
+_current_phase="Install Scripts"
+
+_phase_timer_start "Install Scripts"
+
+if $VERBOSE; then
+  log_phase "5/5" "Install Scripts"
+else
+  phase_start "5/5" "Install Scripts"
+  phase_end_deferred
+fi
+
+_install_count=0
+while IFS= read -r -d '' installer; do
+  [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
+  if $VERBOSE; then
+    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
+    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
+  else
+    run_with_substep_spinner "${installer#"$DOTFILES_ROOT"/}" "$LOGFILE" \
+      sh -c "$installer"
+  fi
+  _install_count=$((_install_count + 1))
+done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
+
+# --- Drift check ---
+# Count brew-installed packages not in Brewfile (fast, local)
+if $IS_MACOS && ! $SKIP_DEPS; then
+  if ! $VERBOSE; then
+    substep_start "drift check"
+  fi
+
   _audit_count=0
   _ignore_file="$HOME/.brew-audit-ignore"
   while IFS= read -r leaf; do
@@ -454,49 +494,26 @@ else
 
   if [[ $_audit_count -gt 0 ]]; then
     _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run script/brew-audit")
-    if $VERBOSE; then
-      log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+  fi
+
+  if $VERBOSE; then
+    [[ $_audit_count -gt 0 ]] && log_warn "$_audit_count packages not in Brewfile — run script/brew-audit"
+  else
+    if [[ $_audit_count -gt 0 ]]; then
+      substep_stop warn "drift check ($_audit_count untracked)"
+    else
+      substep_stop ok "drift check"
     fi
   fi
-
-  if $VERBOSE; then
-    log_success "$_brew_summary"
-  else
-    phase_resolve ok "$_brew_summary"
-  fi
 fi
-
-# ---------------------------------------------------------------------------
-# Phase 5: Topic Install Scripts
-# ---------------------------------------------------------------------------
-
-_current_phase="Install Scripts"
-
-if $VERBOSE; then
-  log_phase "5/5" "Install Scripts"
-else
-  phase_start "5/5" "Install Scripts"
-fi
-
-_install_count=0
-while IFS= read -r -d '' installer; do
-  [[ "$installer" == *"homebrew/install.sh" ]] && continue  # already handled above
-  if $VERBOSE; then
-    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
-    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
-  else
-    phase_update "${installer#"$DOTFILES_ROOT"/}"
-    sh -c "$installer" >> "$LOGFILE" 2>&1
-  fi
-  _install_count=$((_install_count + 1))
-done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
 
 if $VERBOSE; then
   if [[ $_install_count -gt 0 ]]; then
     log_success "install scripts ($_install_count)"
   fi
 else
-  phase_end ok "$_install_count completed"
+  _install_detail="$_install_count completed"
+  phase_resolve ok "$_install_detail"
 fi
 
 _current_phase=""

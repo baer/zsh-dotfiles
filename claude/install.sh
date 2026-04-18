@@ -14,7 +14,4 @@ if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_CONFIG_DIR/CLAUDE.md
   mv "$CLAUDE_CONFIG_DIR/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md.backup"
 fi
 
-if [ ! -L "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
-  ln -s "$DOTFILES_ROOT/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
-  echo "  Linked CLAUDE.md"
-fi
+ln -sf "$DOTFILES_ROOT/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"

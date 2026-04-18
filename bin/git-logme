@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 #
 # Usage: git logme [<git-log-options>]
 #
@@ -61,11 +61,11 @@ fi
 # -- build git log command ---------------------------------------------
 
 # Multiple --author flags are OR'd by git log.
-author_args=""
+author_args=()
 while IFS= read -r id; do
-  author_args="$author_args --author=\"$id\""
+  [ -n "$id" ] && author_args+=(--author="$id")
 done <<EOF
 $identities
 EOF
 
-eval git log $author_args '"$@"'
+git log "${author_args[@]}" "$@"
