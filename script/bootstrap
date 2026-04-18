@@ -138,6 +138,7 @@ if $DRY_RUN; then
   else
     log_skip "Installing Software (not macOS)"
   fi
+  log_info "Would run topic install scripts"
   printf "\n"
   exit 0
 fi
@@ -447,6 +448,10 @@ fi
 # ---------------------------------------------------------------------------
 
 _current_phase="Install Scripts"
+
+if $VERBOSE; then
+  log_phase "5/5" "Install Scripts"
+fi
 
 _install_count=0
 while IFS= read -r -d '' installer; do
