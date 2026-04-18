@@ -1,0 +1,4 @@
+- `macos/defaults.sh` contains `defaults write` commands for macOS preferences. Named `.sh` to prevent auto-sourcing.
+- `macos/install.sh` runs `defaults.sh` during bootstrap.
+- Run `sh macos/defaults.sh` manually after macOS updates (updates can reset preferences).
+- Add new defaults to `macos/defaults.sh` with a comment explaining what each setting does and its default value.
