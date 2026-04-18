@@ -13,6 +13,8 @@ Personal zsh dotfiles using topical organization
 
 **Alphabetical ordering is load-bearing.** Topics load by directory name, so `system/` always loads after `editors/`. If two topics set the same variable, the later directory wins.
 
+**Platform helpers** (`is_macos`, `is_linux`) are defined in `system/platform.zsh` and available during the `*.zsh` pass (step 3). They are NOT available during the `path.zsh` pass (step 2) — use inline `[[ "$(uname -s)" == "Darwin" ]]` guards in path files.
+
 ## Commands
 
 - `script/bootstrap` -- idempotent setup and maintenance (symlinks, git config, brew update/upgrade/bundle, topic install scripts)
@@ -28,6 +30,8 @@ Personal zsh dotfiles using topical organization
 - `path.zsh` -- loaded first (PATH setup)
 - `completion.zsh` -- loaded last (after compinit)
 - `install.sh` -- executed by `script/bootstrap`. Extension is `.sh` to avoid auto-sourcing.
+- `*.sh` -- not auto-sourced (the `.sh` extension prevents it). Used for `install.sh` scripts and other executable scripts within topic directories.
+- `npm-globals.txt` -- declarative package lists, one package per line. Read by `install.sh` in the same topic directory.
 - `bin/*` -- added to $PATH. Must have a shebang and be executable.
 
 ## Verification
@@ -55,3 +59,20 @@ The Brewfile is the canonical list of all desired packages. On work machines whe
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
 - **git rebase is interactive**: `git/gitconfig.symlink` aliases `rebase = rebase -i`. Never call `git rebase` expecting non-interactive behavior.
 - **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
+
+## Cross-Platform
+
+Shell config loads on both macOS and Linux. Packages (Homebrew) are macOS-only.
+
+- `path.zsh` files guard on `[[ "$(uname -s)" == "Darwin" ]]` (inline, since platform helpers load later)
+- Other `.zsh` files use `is_macos` / `is_linux` helpers from `system/platform.zsh`
+- `install.sh` scripts run on all platforms. Self-guard with `[ "$(uname -s)" = "Darwin" ] || exit 0` if macOS-only.
+- Bootstrap Phase 4 (Homebrew) is macOS-only. Phase 5 (install scripts) runs everywhere.
+
+## XDG Base Directories
+
+`system/env.zsh` exports `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` with spec-compliant defaults. Existing values are preserved.
+
+- **New configs** use `$XDG_CONFIG_HOME/<tool>/` via `install.sh` symlinks (see `ghostty/install.sh`, `starship/install.sh`).
+- **Legacy configs** (git, vim, zshrc) stay in `$HOME` — company tooling co-owns `.gitconfig` and `.zshrc`.
+- **Starship** lives at `$XDG_CONFIG_HOME/starship.toml` (its native default location).
