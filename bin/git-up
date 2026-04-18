@@ -8,6 +8,7 @@
 #
 #   -r   After updating, interactively rebase the current branch
 #        onto the default branch.
+#   -i CMD  Run CMD after a successful pull (e.g. "yarn install").
 #
 # Changelog of pulled commits is printed after the update.
 
@@ -43,9 +44,12 @@ has_inflight_operation() {
 # -- parse flags -----------------------------------------------------
 
 rebase=false
+post_install=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -r) rebase=true; shift ;;
+    -i) [ -n "${2:-}" ] || die "-i requires a command argument"
+        post_install="$2"; shift 2 ;;
     *)  die "unknown option: $1" ;;
   esac
 done
@@ -111,6 +115,13 @@ if $rebase && [ "$current_branch" != "$default_branch" ]; then
     fi
     exit 1
   fi
+fi
+
+# -- post-install (if -i) -----------------------------------------------
+
+if [ -n "$post_install" ] && [ "$old_head" != "$new_head" ]; then
+  echo "Running post-install: $post_install"
+  eval "$post_install" || warn "post-install command failed"
 fi
 
 # -- restore stash ----------------------------------------------------
