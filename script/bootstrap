@@ -542,7 +542,7 @@ if $IS_MACOS && ! $SKIP_DEPS; then
       while IFS= read -r _tap; do
         [[ -z "$_tap" ]] && continue
         # Skip implicit taps
-        [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" ]] && continue
+        [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" || "$_tap" == "homebrew/bundle" ]] && continue
         [[ -f "$_ignore_file" ]] && grep -qx "$_tap" "$_ignore_file" 2>/dev/null && continue
         _is_expected=false
         for _t in "${_expected_taps[@]:-}"; do

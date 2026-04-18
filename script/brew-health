@@ -136,7 +136,7 @@ _check_obsolete_taps() {
   local untracked=()
   while IFS= read -r tap; do
     [[ -z "$tap" ]] && continue
-    [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" ]] && continue
+    [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" || "$tap" == "homebrew/bundle" ]] && continue
     local found=false
     for t in "${expected_taps[@]:-}"; do
       [[ "$t" == "$tap" ]] && { found=true; break; }

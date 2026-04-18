@@ -195,7 +195,7 @@ done < <(grep "^tap " "$BREWFILE" | sed "s/tap '\\(.*\\)'/\\1/")
 drift_taps=()
 while IFS= read -r _tap; do
   [[ -z "$_tap" ]] && continue
-  [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" ]] && continue
+  [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" || "$_tap" == "homebrew/bundle" ]] && continue
   _is_ignored "$_tap" && continue
   _is_expected=false
   for _t in "${_expected_taps[@]:-}"; do

@@ -10,7 +10,6 @@ if ENV['HOMEBREW_BUNDLE_CASK_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_CASK_SKIP'].emp
   end
 end
 
-tap 'homebrew/bundle'
 tap 'stripe/stripe-cli'
 
 brew 'atuin'
