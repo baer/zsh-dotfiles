@@ -15,9 +15,9 @@ Personal zsh dotfiles using topical organization
 
 ## Commands
 
-- `script/bootstrap` -- initial setup (creates symlinks to $HOME, configures git, detects company-managed casks, runs dot)
-- `script/brew-skip-detect` -- detects casks installed outside Homebrew, writes skip list to `~/.localrc`
-- `bin/dot` -- ongoing maintenance (brew update/upgrade, brew bundle, runs topic install scripts)
+- `script/bootstrap` -- idempotent setup and maintenance (symlinks, git config, brew update/upgrade/bundle, topic install scripts)
+- `script/brew-skip-detect` -- detects casks installed outside Homebrew, offers skip or adopt per-app, writes skip list to `~/.localrc`
+- `script/brew-audit` -- detects Brewfile drift (installed packages not in Brewfile) and offers to adopt manually installed apps into Homebrew management
 - `reload!` -- re-source ~/.zshrc
 - `source ~/.zshrc` -- same as reload!, works outside zsh
 
@@ -45,10 +45,10 @@ Manual (run after completing changes):
 
 The Brewfile is the canonical list of all desired packages. On work machines where company MDM/Chef manages some apps, `HOMEBREW_BUNDLE_CASK_SKIP` tells `brew bundle` which casks to skip.
 
-- `script/brew-skip-detect` auto-detects casks already installed outside Homebrew and writes the skip list to `~/.localrc`
-- `script/bootstrap` runs detection automatically before installing dependencies
-- `bin/dot` prints a reminder if on a Gusto machine without the skip var set
+- `script/brew-skip-detect` auto-detects casks already installed outside Homebrew and offers per-app skip or adopt
+- `script/bootstrap` runs detection automatically before installing dependencies, and shows a drift nudge after brew bundle
 - Re-run `script/brew-skip-detect` if managed apps change
+- Run `script/brew-audit` periodically to find packages installed via `brew install` but missing from the Brewfile
 
 ## Gotchas
 
