@@ -1,4 +1,4 @@
-export STARSHIP_CONFIG=~/.starship
+export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship.toml"
 
 # Pre-select random emoji in-process so starship doesn't spawn a subprocess.
 # The emoji list was previously in starship.toml as a custom command module;
