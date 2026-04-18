@@ -380,9 +380,9 @@ phase_resolve() {
     _format_status_row "$sym" "$name" "$detail" "$timing"
     printf '\n'
 
-    # Move cursor back down to the bottom
+    # Erase substep lines — they served their purpose during execution
     if [[ $lines_to_jump -gt 0 ]]; then
-      printf "\e[%dB" "$lines_to_jump"
+      printf "\e[J"
     fi
   else
     # Non-TTY or dirty cursor: print a resolved summary line at current position
@@ -521,8 +521,10 @@ log_summary_box() {
 # ---------------------------------------------------------------------------
 
 log_celebration() {
-  local next_cmd="${1:-source ~/.zshrc}"
-  printf "\n  ${_GREEN}${_BOLD}✓ All set!${_RST}\n"
+  local next_cmd="${1:-source ~/.zshrc}" elapsed="${2:-}"
+  local timing=""
+  [[ -n "$elapsed" ]] && timing=" in ${elapsed}"
+  printf "\n  ${_GREEN}${_BOLD}✓ Done%s${_RST} ${_DIM}— happy hacking!${_RST}\n" "$timing"
   printf "\n  ${_DIM}Next →${_RST} ${_BOLD}%s${_RST}${_DIM}  or open a new terminal${_RST}\n\n" "$next_cmd"
 }
 
@@ -532,7 +534,7 @@ log_celebration() {
 
 log_error_context() {
   local logfile="$1" phase="${2:-}"
-  local tail_lines=5
+  local tail_lines=20
 
   if [[ -n "$phase" ]]; then
     log_error "Failed during: $phase"
@@ -545,7 +547,12 @@ log_error_context() {
   local logname="${logfile##*/}"
 
   if [[ "$INTERACTIVE" == true ]] && _is_tty; then
-    local w=46
+    # Size to terminal: min 80, max terminal width minus indent
+    local term_w
+    term_w="$(tput cols 2>/dev/null || printf '%s' "${COLUMNS:-80}")"
+    local w=$((term_w - 4))  # 2-space indent + small margin
+    [[ $w -lt 78 ]] && w=78
+
     local header_content="─ ${logname} (last ${tail_lines} lines) "
     local header_len=${#header_content}
     local remaining=$((w - header_len - 1))
@@ -555,14 +562,12 @@ log_error_context() {
     printf "\n  %s%s%s%s\n" "$_BOX_TL" "$_BOX_H" "${_DIM}${header_content}${_RST}" "${header_pad}${_BOX_TR}"
 
     while IFS= read -r line; do
-      # Truncate long lines to fit box
-      if [[ ${#line} -gt $((w - 4)) ]]; then
-        line="${line:0:$((w - 5))}…"
-      fi
       _draw_box_row $w "  ${_DIM}${line}${_RST}"
     done < <(tail -n "$tail_lines" "$logfile")
 
     _draw_box_bottom $w
+
+    printf "  ${_DIM}Full log: %s${_RST}\n" "$logfile"
   else
     printf "\n  Last %d lines of %s:\n" "$tail_lines" "$logname"
     tail -n "$tail_lines" "$logfile" | while IFS= read -r line; do
@@ -606,6 +611,11 @@ _detect_error_hint() {
 
   if [[ "$text" == *"Could not resolve host"* ]] || [[ "$text" == *"Network is unreachable"* ]]; then
     printf "Network connectivity issue. Check your internet connection."
+    return
+  fi
+
+  if [[ "$text" == *"EEXIST"* ]] && [[ "$text" == *"npm"* ]]; then
+    printf "npm found conflicting files from a previous install.\n        Run the command shown above with --force, or remove the conflicting file."
     return
   fi
 }
