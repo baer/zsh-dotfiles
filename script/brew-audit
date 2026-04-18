@@ -185,6 +185,36 @@ trap '_on_exit' EXIT
 
 printf "\n  ${_BOLD}brew-audit${_RST}\n\n"
 
+# Collect expected taps from Brewfile
+_expected_taps=()
+while IFS= read -r _tap_line; do
+  _expected_taps+=("$_tap_line")
+done < <(grep "^tap " "$BREWFILE" | sed "s/tap '\\(.*\\)'/\\1/")
+
+# Collect drifted taps
+drift_taps=()
+while IFS= read -r _tap; do
+  [[ -z "$_tap" ]] && continue
+  [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" ]] && continue
+  _is_ignored "$_tap" && continue
+  _is_expected=false
+  for _t in "${_expected_taps[@]:-}"; do
+    [[ "$_t" == "$_tap" ]] && { _is_expected=true; break; }
+  done
+  if ! $_is_expected; then
+    drift_taps+=("$_tap")
+  fi
+done < <(brew tap 2>/dev/null)
+
+# Display tap drift
+if [[ ${#drift_taps[@]} -gt 0 ]]; then
+  printf "  Taps not in Brewfile (%d):\n" "${#drift_taps[@]}"
+  for t in "${drift_taps[@]}"; do
+    printf "    %s %s\n" "$_INFO" "$t"
+  done
+  printf "\n"
+fi
+
 # Collect drifted formulae
 drift_formulae=()
 while IFS= read -r leaf; do
@@ -201,7 +231,7 @@ while IFS= read -r cask; do
 done < <(brew list --cask 2>/dev/null)
 
 # Display drift results
-_drift_total=$(( ${#drift_formulae[@]} + ${#drift_casks[@]} ))
+_drift_total=$(( ${#drift_taps[@]} + ${#drift_formulae[@]} + ${#drift_casks[@]} ))
 
 if [[ ${#drift_formulae[@]} -gt 0 ]]; then
   printf "  Formulae not in Brewfile (%d):\n" "${#drift_formulae[@]}"
@@ -309,12 +339,14 @@ case "$_review_response" in
     ;;
   3)
     # Dismiss all
+    for t in "${drift_taps[@]}"; do _add_to_ignore "$t"; done
     for f in "${drift_formulae[@]}"; do _add_to_ignore "$f"; done
     for c in "${drift_casks[@]}"; do _add_to_ignore "$c"; done
     for c in "${adoptable_casks[@]}"; do _add_to_ignore "$c"; done
     ;;
   1)
     # Add all drift items to Brewfile
+    for t in "${drift_taps[@]}"; do _add_to_brewfile "tap" "$t"; done
     for f in "${drift_formulae[@]}"; do _add_to_brewfile "brew" "$f"; done
     for c in "${drift_casks[@]}"; do _add_to_brewfile "cask" "$c"; done
     # Adopt all adoptable apps
@@ -324,6 +356,18 @@ case "$_review_response" in
     ;;
   2)
     # Review one by one
+    # Drift taps
+    for t in "${drift_taps[@]}"; do
+      printf "  %s (tap)\n" "$t"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$_item_response" in
+        1) _add_to_brewfile "tap" "$t" ;;
+        2) _add_to_ignore "$t" ;;
+        3) ;;
+      esac
+    done
+
     # Drift formulae
     for f in "${drift_formulae[@]}"; do
       printf "  %s\n" "$f"

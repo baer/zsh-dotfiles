@@ -526,6 +526,33 @@ if $IS_MACOS && ! $SKIP_DEPS; then
     _drift_skipped=true
   fi
 
+  # Collect expected taps from Brewfile
+  if ! $_drift_skipped; then
+    _expected_taps=()
+    while IFS= read -r _tap_line; do
+      _expected_taps+=("$_tap_line")
+    done < <(grep "^tap " "$DOTFILES_ROOT/Brewfile" | sed "s/tap '\\(.*\\)'/\\1/")
+
+    if _installed_taps="$(brew tap 2>&1)"; then
+      while IFS= read -r _tap; do
+        [[ -z "$_tap" ]] && continue
+        # Skip implicit taps
+        [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" ]] && continue
+        [[ -f "$_ignore_file" ]] && grep -qx "$_tap" "$_ignore_file" 2>/dev/null && continue
+        _is_expected=false
+        for _t in "${_expected_taps[@]:-}"; do
+          [[ "$_t" == "$_tap" ]] && { _is_expected=true; break; }
+        done
+        if ! $_is_expected; then
+          _audit_count=$((_audit_count + 1))
+          _drift_names+=("tap:$_tap")
+        fi
+      done <<< "$_installed_taps"
+    else
+      _drift_skipped=true
+    fi
+  fi
+
   if $_drift_skipped; then
     _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
   elif [[ $_audit_count -gt 0 ]]; then
