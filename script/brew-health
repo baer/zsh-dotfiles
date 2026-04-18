@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+#
+# brew-health
+#
+# Diagnoses common Homebrew problems: lock contention, fsmonitor in tap
+# repos, obsolete taps, disabled formulae, orphaned casks, and Brewfile
+# satisfaction. Run manually or auto-invoked on Phase 4 bootstrap failure.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+DOTFILES_ROOT=$(pwd -P)
+BREWFILE="$DOTFILES_ROOT/Brewfile"
+
+# shellcheck source=lib/output.sh
+source "$DOTFILES_ROOT/script/lib/output.sh"
+
+# Source localrc to pick up HOMEBREW_BUNDLE_CASK_SKIP
+# shellcheck disable=SC1091
+[[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
+
+_failures=0
+
+_check_pass() { printf "  ${_GREEN}✓${_RST} %s\n" "$1"; }
+_check_fail() { printf "  ${_RED}✗${_RST} %s\n" "$1"; _failures=$((_failures + 1)); }
+_check_detail() { printf "      %s\n" "$1"; }
+
+# ---------------------------------------------------------------------------
+# Check 1: Homebrew reachable
+# ---------------------------------------------------------------------------
+
+_check_brew_reachable() {
+  local prefix
+  if prefix="$(brew --prefix 2>&1)"; then
+    _check_pass "Homebrew reachable ($prefix)"
+    return 0
+  else
+    _check_fail "Homebrew not reachable"
+    _check_detail "Install: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Check 2: Update lock not held
+# ---------------------------------------------------------------------------
+
+_check_update_lock() {
+  local lock_file
+  lock_file="$(brew --prefix)/var/homebrew/locks/update"
+
+  if [[ ! -f "$lock_file" ]]; then
+    _check_pass "Update lock not held"
+    return 0
+  fi
+
+  local holders
+  holders="$(lsof "$lock_file" 2>/dev/null || true)"
+
+  if [[ -z "$holders" ]] || [[ "$(echo "$holders" | wc -l)" -le 1 ]]; then
+    _check_pass "Update lock not held"
+    return 0
+  fi
+
+  _check_fail "Update lock is held"
+
+  # Show each holder process
+  echo "$holders" | tail -n +2 | while IFS= read -r line; do
+    local pid cmd
+    pid="$(echo "$line" | awk '{print $2}')"
+    cmd="$(echo "$line" | awk '{print $1}')"
+    _check_detail "$cmd (PID $pid)"
+
+    # Try to find the associated repo for git processes
+    if [[ "$cmd" == "git" ]]; then
+      local cwd
+      cwd="$(lsof -p "$pid" 2>/dev/null | grep cwd | awk '{print $NF}')" || true
+      if [[ -n "$cwd" ]]; then
+        _check_detail "  working dir: $cwd"
+      fi
+    fi
+  done
+
+  _check_detail "fix: kill the process(es) above, then retry"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Check 3: fsmonitor disabled in tap repos
+# ---------------------------------------------------------------------------
+
+_check_fsmonitor_taps() {
+  local taps_dir
+  taps_dir="$(brew --repository)/Library/Taps"
+
+  if [[ ! -d "$taps_dir" ]]; then
+    _check_pass "fsmonitor in tap repos (no taps directory)"
+    return 0
+  fi
+
+  local bad_taps=()
+  while IFS= read -r tap_dir; do
+    [[ -d "$tap_dir/.git" ]] || continue
+    local val
+    val="$(git -C "$tap_dir" config --get core.fsmonitor 2>/dev/null || echo "unset")"
+    if [[ "$val" == "true" ]]; then
+      bad_taps+=("$(basename "$(dirname "$tap_dir")")/$(basename "$tap_dir")")
+    fi
+  done < <(find "$taps_dir" -mindepth 2 -maxdepth 2 -type d)
+
+  if [[ ${#bad_taps[@]} -eq 0 ]]; then
+    _check_pass "fsmonitor disabled in tap repos"
+    return 0
+  fi
+
+  _check_fail "fsmonitor enabled in tap repos"
+  for t in "${bad_taps[@]}"; do
+    _check_detail "$t has core.fsmonitor=true"
+  done
+  _check_detail "fix: add includeIf overrides in ~/.gitconfig (see git/gitconfig.symlink)"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Check 4: No obsolete taps
+# ---------------------------------------------------------------------------
+
+_check_obsolete_taps() {
+  local expected_taps=()
+  if [[ -f "$BREWFILE" ]]; then
+    while IFS= read -r _tap_line; do
+      expected_taps+=("$_tap_line")
+    done < <(grep "^tap " "$BREWFILE" | sed "s/tap '\\(.*\\)'/\\1/")
+  fi
+
+  local untracked=()
+  while IFS= read -r tap; do
+    [[ -z "$tap" ]] && continue
+    [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" ]] && continue
+    local found=false
+    for t in "${expected_taps[@]:-}"; do
+      [[ "$t" == "$tap" ]] && { found=true; break; }
+    done
+    if ! $found; then
+      untracked+=("$tap")
+    fi
+  done < <(brew tap 2>/dev/null)
+
+  if [[ ${#untracked[@]} -eq 0 ]]; then
+    _check_pass "No obsolete taps"
+    return 0
+  fi
+
+  _check_fail "Untracked taps found"
+  for t in "${untracked[@]}"; do
+    # Check if deprecated
+    local info
+    info="$(brew tap-info "$t" 2>&1 || true)"
+    if echo "$info" | grep -qi "deprecated\|does not exist\|invalid"; then
+      _check_detail "$t — deprecated/invalid, run: brew untap $t"
+    else
+      _check_detail "$t — not in Brewfile, add or: brew untap $t"
+    fi
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Check 5: No disabled formulae
+# ---------------------------------------------------------------------------
+
+_check_disabled_formulae() {
+  local json
+  json="$(brew info --json=v2 --installed 2>/dev/null || true)"
+
+  if [[ -z "$json" ]]; then
+    _check_pass "No disabled formulae (could not query)"
+    return 0
+  fi
+
+  local disabled
+  disabled="$(echo "$json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for f in data.get('formulae', []):
+    if f.get('disabled', False):
+        name = f['name']
+        msg = f.get('disable_reason', 'no reason given')
+        date = f.get('disable_date', 'unknown date')
+        print(f'{name} (disabled {date}: {msg})')
+" 2>/dev/null || true)"
+
+  if [[ -z "$disabled" ]]; then
+    _check_pass "No disabled formulae"
+    return 0
+  fi
+
+  _check_fail "Disabled formulae installed"
+  while IFS= read -r line; do
+    local name="${line%% (*}"
+    _check_detail "$line"
+    _check_detail "  run: brew uninstall $name"
+  done <<< "$disabled"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Check 6: Cask app artifacts present
+# ---------------------------------------------------------------------------
+
+_check_orphaned_casks() {
+  local orphaned=()
+
+  while IFS= read -r cask; do
+    [[ -z "$cask" ]] && continue
+    # Get the expected app artifact path
+    local app_name
+    app_name="$(brew info --cask --json=v2 "$cask" 2>/dev/null | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for c in data.get('casks', []):
+    for a in c.get('artifacts', []):
+        if isinstance(a, dict) and 'app' in a:
+            for app in a['app']:
+                print(app)
+                sys.exit(0)
+" 2>/dev/null || true)"
+
+    if [[ -n "$app_name" ]] && [[ ! -e "/Applications/$app_name" ]]; then
+      orphaned+=("$cask|$app_name")
+    fi
+  done < <(brew list --cask 2>/dev/null)
+
+  if [[ ${#orphaned[@]} -eq 0 ]]; then
+    _check_pass "Cask app artifacts present"
+    return 0
+  fi
+
+  _check_fail "Orphaned cask metadata"
+  for entry in "${orphaned[@]}"; do
+    local cask="${entry%%|*}" app="${entry#*|}"
+    _check_detail "$cask — /Applications/$app missing"
+    _check_detail "  run: brew uninstall --cask $cask"
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Check 7: Brewfile satisfaction
+# ---------------------------------------------------------------------------
+
+_check_bundle_satisfaction() {
+  local output
+  if output="$(brew bundle check --file="$BREWFILE" 2>&1)"; then
+    _check_pass "Brewfile satisfied"
+    return 0
+  else
+    _check_fail "Brewfile not satisfied"
+    while IFS= read -r line; do
+      _check_detail "$line"
+    done <<< "$output"
+    _check_detail "run: brew bundle --file=$BREWFILE"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Run all checks
+# ---------------------------------------------------------------------------
+
+printf "\n  ${_BOLD}brew-health${_RST}\n\n"
+
+# Check 1 is a gate — if Homebrew isn't reachable, skip everything else
+if ! _check_brew_reachable; then
+  printf "\n  ${_RED}${_BOLD}1 issue found${_RST} (Homebrew not reachable — remaining checks skipped)\n\n"
+  exit 1
+fi
+
+_check_update_lock
+_check_fsmonitor_taps
+_check_obsolete_taps
+_check_disabled_formulae
+_check_orphaned_casks
+_check_bundle_satisfaction
+
+if [[ $_failures -eq 0 ]]; then
+  printf "\n  ${_GREEN}${_BOLD}All checks passed${_RST}\n\n"
+  exit 0
+else
+  printf "\n  ${_RED}${_BOLD}%d issue(s) found${_RST}\n\n" "$_failures"
+  exit 1
+fi
