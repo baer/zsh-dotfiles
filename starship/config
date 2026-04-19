@@ -1,5 +1,5 @@
 command_timeout = 500
-format = "$all$line_break${env_var.RANDOM_EMOJI} "
+format = "$all"
 
 [aws]
 disabled = true
@@ -41,10 +41,6 @@ disabled = true
 
 [elm]
 disabled = true
-
-[env_var.RANDOM_EMOJI]
-format = "[$env_value]($style) "
-style = ""
 
 [erlang]
 disabled = true
