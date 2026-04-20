@@ -460,41 +460,10 @@ else
 
   if $VERBOSE; then
     log_success "$_brew_summary"
-  else
-    phase_resolve ok "$_brew_summary"
   fi
-fi
 
-# ---------------------------------------------------------------------------
-# Phase 5: Topic Install Scripts
-# ---------------------------------------------------------------------------
-
-_current_phase="Install Scripts"
-
-_phase_timer_start "Install Scripts"
-
-if $VERBOSE; then
-  log_phase "5/5" "Install Scripts"
-else
-  phase_start "5/5" "Install Scripts"
-  phase_end_deferred
-fi
-
-_install_count=0
-while IFS= read -r -d '' installer; do
-  if $VERBOSE; then
-    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
-    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
-  else
-    run_with_substep_spinner "${installer#"$DOTFILES_ROOT"/}" "$LOGFILE" \
-      sh -c "$installer"
-  fi
-  _install_count=$((_install_count + 1))
-done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
-
-# --- Drift check ---
-# Count brew-installed packages not in Brewfile (fast, local)
-if $IS_MACOS && ! $SKIP_DEPS; then
+  # --- Drift check ---
+  # Count brew-installed packages not in Brewfile (fast, local)
   if ! $VERBOSE; then
     substep_start "drift check"
   fi
@@ -578,7 +547,75 @@ if $IS_MACOS && ! $SKIP_DEPS; then
       substep_stop ok "drift check"
     fi
   fi
+
+  # --- Vulnerability check ---
+  # Quick scan for known vulns in installed packages (requires brew-vulns)
+  if command -v brew-vulns &>/dev/null; then
+    if ! $VERBOSE; then
+      substep_start "vuln check"
+    fi
+
+    _vuln_count=0
+    _vuln_output=""
+
+    if command -v gtimeout &>/dev/null; then
+      _vuln_output="$(gtimeout 15 brew vulns --severity high 2>/dev/null)" || true
+    else
+      _vuln_output="$(brew vulns --severity high 2>/dev/null)" || true
+    fi
+
+    if [[ -n "$_vuln_output" ]]; then
+      _vuln_count="$(echo "$_vuln_output" | grep -cE '^[a-z].*\(' || true)"
+    fi
+
+    if [[ $_vuln_count -gt 0 ]]; then
+      _ACTIONABLE_WARNINGS+=("$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}")
+    fi
+
+    if $VERBOSE; then
+      if [[ $_vuln_count -gt 0 ]]; then
+        log_warn "$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}"
+      fi
+    else
+      if [[ $_vuln_count -gt 0 ]]; then
+        substep_stop warn "vuln check ($_vuln_count vulnerable)"
+      else
+        substep_stop ok "vuln check"
+      fi
+    fi
+  fi
+
+  if ! $VERBOSE; then
+    phase_resolve ok "$_brew_summary"
+  fi
 fi
+
+# ---------------------------------------------------------------------------
+# Phase 5: Topic Install Scripts
+# ---------------------------------------------------------------------------
+
+_current_phase="Install Scripts"
+
+_phase_timer_start "Install Scripts"
+
+if $VERBOSE; then
+  log_phase "5/5" "Install Scripts"
+else
+  phase_start "5/5" "Install Scripts"
+  phase_end_deferred
+fi
+
+_install_count=0
+while IFS= read -r -d '' installer; do
+  if $VERBOSE; then
+    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
+    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
+  else
+    run_with_substep_spinner "${installer#"$DOTFILES_ROOT"/}" "$LOGFILE" \
+      sh -c "$installer"
+  fi
+  _install_count=$((_install_count + 1))
+done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
 
 if $VERBOSE; then
   if [[ $_install_count -gt 0 ]]; then
