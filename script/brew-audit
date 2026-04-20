@@ -36,6 +36,11 @@ _is_in_cask_skip() {
   echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $pkg "
 }
 
+_is_in_mas_skip() {
+  local pkg="$1"
+  echo " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " | grep -q " $pkg "
+}
+
 _remove_tap() {
   local tap="$1"
   spinner_start "brew untap $tap"
@@ -273,8 +278,24 @@ while IFS= read -r cask; do
   grep -qx "cask '$cask'" "$BREWFILE" || drift_casks+=("$cask")
 done < <(brew list --cask 2>/dev/null)
 
+# Collect drifted mas apps
+drift_mas=()
+if command -v mas &>/dev/null; then
+  while IFS= read -r _mas_line; do
+    [[ -z "$_mas_line" ]] && continue
+    _mas_id="$(echo "$_mas_line" | awk '{print $1}')"
+    _mas_name="$(echo "$_mas_line" | sed 's/^[0-9]* *//' | sed 's/ *(.*$//')"
+    [[ -z "$_mas_id" ]] && continue
+    _is_in_mas_skip "$_mas_id" && continue
+    _is_ignored "$_mas_id" && continue
+    if ! grep -q "id: ${_mas_id}$" "$BREWFILE"; then
+      drift_mas+=("${_mas_id}:${_mas_name}")
+    fi
+  done < <(mas list 2>/dev/null)
+fi
+
 # Display drift results
-_drift_total=$(( ${#drift_taps[@]} + ${#drift_formulae[@]} + ${#drift_casks[@]} ))
+_drift_total=$(( ${#drift_taps[@]} + ${#drift_formulae[@]} + ${#drift_casks[@]} + ${#drift_mas[@]} ))
 
 if [[ ${#drift_formulae[@]} -gt 0 ]]; then
   printf "  Formulae not in Brewfile (%d):\n" "${#drift_formulae[@]}"
@@ -288,6 +309,16 @@ if [[ ${#drift_casks[@]} -gt 0 ]]; then
   printf "  Casks not in Brewfile (%d):\n" "${#drift_casks[@]}"
   for c in "${drift_casks[@]}"; do
     printf "    %s %s\n" "$_INFO" "$c"
+  done
+  printf "\n"
+fi
+
+if [[ ${#drift_mas[@]} -gt 0 ]]; then
+  printf "  Mac App Store apps not in Brewfile (%d):\n" "${#drift_mas[@]}"
+  for m in "${drift_mas[@]}"; do
+    _mid="${m%%:*}"
+    _mname="${m#*:}"
+    printf "    %s %s (id: %s)\n" "$_INFO" "$_mname" "$_mid"
   done
   printf "\n"
 fi
