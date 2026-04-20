@@ -138,6 +138,49 @@ ${line}
   log_success "Added $line to Brewfile"
 }
 
+# Add a mas entry to the Brewfile in the correct section, alphabetically.
+# Args: app_name app_id
+_add_mas_to_brewfile() {
+  local name="$1" id="$2"
+  local line="mas '${name}', id: ${id}"
+
+  local section_pattern="^mas '"
+  local last_section_line
+  last_section_line="$(grep -n "$section_pattern" "$BREWFILE" | tail -1 | cut -d: -f1)"
+
+  if [[ -z "$last_section_line" ]]; then
+    # mas section doesn't exist — append to end of file
+    echo "" >> "$BREWFILE"
+    echo "$line" >> "$BREWFILE"
+  else
+    local inserted=false
+    local tmp
+    tmp="$(mktemp)"
+    while IFS= read -r existing; do
+      if [[ "$inserted" == false ]] && [[ "$existing" =~ ^mas\ \' ]]; then
+        local existing_name
+        existing_name="$(echo "$existing" | awk -F"'" '{print $2}')"
+        if [[ "$name" < "$existing_name" ]]; then
+          echo "$line" >> "$tmp"
+          inserted=true
+        fi
+      fi
+      echo "$existing" >> "$tmp"
+    done < "$BREWFILE"
+
+    if [[ "$inserted" == false ]]; then
+      sed -i '' "${last_section_line}a\\
+${line}
+" "$BREWFILE"
+    else
+      mv "$tmp" "$BREWFILE"
+    fi
+    rm -f "$tmp"
+  fi
+
+  log_success "Added $line to Brewfile"
+}
+
 # Remove a cask from HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc
 _remove_from_skip_list() {
   local cask="$1"
@@ -417,12 +460,16 @@ case "$_review_response" in
     for f in "${drift_formulae[@]}"; do _add_to_ignore "$f"; done
     for c in "${drift_casks[@]}"; do _add_to_ignore "$c"; done
     for c in "${adoptable_casks[@]}"; do _add_to_ignore "$c"; done
+    for m in "${drift_mas[@]}"; do _add_to_ignore "${m%%:*}"; done
     ;;
   1)
     # Add all drift items to Brewfile
     for t in "${drift_taps[@]}"; do _add_to_brewfile "tap" "$t"; done
     for f in "${drift_formulae[@]}"; do _add_to_brewfile "brew" "$f"; done
     for c in "${drift_casks[@]}"; do _add_to_brewfile "cask" "$c"; done
+    for m in "${drift_mas[@]}"; do
+      _add_mas_to_brewfile "${m#*:}" "${m%%:*}"
+    done
     # Adopt all adoptable apps
     for i in "${!adoptable_casks[@]}"; do
       _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true
@@ -466,6 +513,20 @@ case "$_review_response" in
         2) _remove_cask "$c" ;;
         3) _add_to_ignore "$c" ;;
         4) ;;
+      esac
+    done
+
+    # Drift mas apps
+    for m in "${drift_mas[@]}"; do
+      _mid="${m%%:*}"
+      _mname="${m#*:}"
+      printf "  %s (mas, id: %s)\n" "$_mname" "$_mid"
+      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$_item_response" in
+        1) _add_mas_to_brewfile "$_mname" "$_mid" ;;
+        2) _add_to_ignore "$_mid" ;;
+        3) ;;
       esac
     done
 
