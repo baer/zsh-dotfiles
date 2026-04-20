@@ -10,6 +10,16 @@ if ENV['HOMEBREW_BUNDLE_CASK_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_CASK_SKIP'].emp
   end
 end
 
+# Load mas skip list from ~/.localrc if not already in environment
+if ENV['HOMEBREW_BUNDLE_MAS_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_MAS_SKIP'].empty?
+  localrc = File.expand_path('~/.localrc')
+  if File.exist?(localrc)
+    File.read(localrc).match(/^export HOMEBREW_BUNDLE_MAS_SKIP="([^"]*)"/) do |m|
+      ENV['HOMEBREW_BUNDLE_MAS_SKIP'] = m[1]
+    end
+  end
+end
+
 tap 'homebrew/brew-vulns'
 tap 'stripe/stripe-cli'
 
