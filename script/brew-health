@@ -3,8 +3,9 @@
 # brew-health
 #
 # Diagnoses common Homebrew problems: lock contention, fsmonitor in tap
-# repos, obsolete taps, disabled formulae, orphaned casks, and Brewfile
-# satisfaction. Run manually or auto-invoked on Phase 4 bootstrap failure.
+# repos, obsolete taps, disabled formulae, orphaned casks, Brewfile
+# satisfaction, and known vulnerabilities. Run manually or auto-invoked
+# on Phase 4 bootstrap failure.
 
 set -euo pipefail
 
@@ -266,6 +267,98 @@ _check_bundle_satisfaction() {
 }
 
 # ---------------------------------------------------------------------------
+# Check 8: No known vulnerabilities
+# ---------------------------------------------------------------------------
+
+_check_vulnerable_formulae() {
+  # Skip if brew-vulns is not installed (binary name = brew-vulns on PATH)
+  if ! command -v brew-vulns &>/dev/null; then
+    _check_pass "Vulnerability scan (brew-vulns not installed)"
+    return 0
+  fi
+
+  # Use gtimeout (coreutils) to prevent network hangs; skip timeout if unavailable
+  local output exit_code=0
+  if command -v gtimeout &>/dev/null; then
+    output="$(gtimeout 30 brew vulns --severity high 2>/dev/null)" || exit_code=$?
+  else
+    output="$(brew vulns --severity high 2>/dev/null)" || exit_code=$?
+  fi
+
+  # gtimeout returns 124 on timeout
+  if [[ $exit_code -eq 124 ]]; then
+    _check_pass "Vulnerability scan (timed out — skipped)"
+    return 0
+  fi
+
+  # Non-zero exit with no output = command error (API failure, gem issue, etc.)
+  if [[ $exit_code -ne 0 && -z "$output" ]]; then
+    _check_pass "Vulnerability scan (could not query)"
+    return 0
+  fi
+
+  # Extract package lines (lines matching "name (version)") from multi-line output.
+  # brew vulns output format:
+  #   Checking N packages...
+  #   (N packages skipped...)
+  #   <blank>
+  #   name (version)
+  #     CVE-ID (SEVERITY) - description
+  #   <blank>
+  #   Found N vulnerabilities in M packages
+  local packages
+  packages="$(echo "$output" | grep -E '^[a-z].*\(' || true)"
+
+  # Filter ignored packages (corporate machines with uncontrollable deps)
+  # Pattern follows HOMEBREW_BUNDLE_CASK_SKIP convention from ~/.localrc
+  if [[ -n "${HOMEBREW_VULNS_IGNORE:-}" && -n "$packages" ]]; then
+    local filtered=""
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local pkg_name="${line%% (*}"
+      # shellcheck disable=SC2086
+      local skip=false
+      for ignore in ${HOMEBREW_VULNS_IGNORE}; do
+        if [[ "$pkg_name" == "$ignore" ]]; then
+          skip=true
+          break
+        fi
+      done
+      $skip || filtered+="$line"$'\n'
+    done <<< "$packages"
+    packages="${filtered%$'\n'}"
+  fi
+
+  if [[ -z "$packages" ]]; then
+    _check_pass "No high/critical vulnerabilities"
+    return 0
+  fi
+
+  local pkg_count
+  pkg_count="$(echo "$packages" | grep -c '.' || true)"
+
+  _check_fail "Vulnerable formulae ($pkg_count packages)"
+
+  # Cap detail output at 5 packages to avoid flooding late-adopter machines
+  local shown=0
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if [[ $shown -lt 5 ]]; then
+      _check_detail "$line"
+      shown=$((shown + 1))
+    fi
+  done <<< "$packages"
+
+  if [[ $pkg_count -gt 5 ]]; then
+    _check_detail "... and $((pkg_count - 5)) more"
+  fi
+
+  _check_detail "run: brew vulns --severity high   (full list)"
+  _check_detail "run: brew upgrade <formula>"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Run all checks
 # ---------------------------------------------------------------------------
 
@@ -283,6 +376,7 @@ _check_obsolete_taps || true
 _check_disabled_formulae || true
 _check_orphaned_casks || true
 _check_bundle_satisfaction || true
+_check_vulnerable_formulae || true
 
 if [[ $_failures -eq 0 ]]; then
   printf "\n  ${_GREEN}${_BOLD}All checks passed${_RST}\n\n"

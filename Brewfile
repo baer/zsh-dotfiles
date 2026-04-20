@@ -10,6 +10,7 @@ if ENV['HOMEBREW_BUNDLE_CASK_SKIP'].nil? || ENV['HOMEBREW_BUNDLE_CASK_SKIP'].emp
   end
 end
 
+tap 'homebrew/brew-vulns'
 tap 'stripe/stripe-cli'
 
 brew 'atuin'
@@ -17,6 +18,7 @@ brew 'awscli'
 brew 'bash'
 brew 'bat'
 brew 'btop'
+brew 'brew-vulns'
 brew 'cloudflared'
 brew 'coreutils'
 brew 'delta'
