@@ -499,6 +499,21 @@ else
     _drift_skipped=true
   fi
 
+  if command -v mas &>/dev/null; then
+    if _mas_installed="$(mas list 2>&1)"; then
+      while IFS= read -r _mas_line; do
+        [[ -z "$_mas_line" ]] && continue
+        _mas_id="$(echo "$_mas_line" | awk '{print $1}')"
+        [[ -z "$_mas_id" ]] && continue
+        echo " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " | grep -q " $_mas_id " && continue
+        [[ -f "$_ignore_file" ]] && grep -qx "$_mas_id" "$_ignore_file" 2>/dev/null && continue
+        if ! grep -q "id: ${_mas_id}$" "$DOTFILES_ROOT/Brewfile"; then
+          _audit_count=$((_audit_count + 1))
+        fi
+      done <<< "$_mas_installed"
+    fi
+  fi
+
   # Collect expected taps from Brewfile
   if ! $_drift_skipped; then
     _expected_taps=()
