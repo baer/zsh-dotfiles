@@ -1,0 +1,66 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(zsh -n:*)",
+      "Bash(brew bundle:*)",
+      "Bash(git mv:*)",
+      "Bash(git rm:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(shellcheck *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -q '\\.symlink'; then echo 'WARNING: This .symlink file is live-symlinked to $HOME. Your edit is already active.' >&2; fi; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -qE '\\.zsh$'; then OUTPUT=$(zsh -n \"$FILE\" 2>&1); if [ $? -ne 0 ]; then echo \"SYNTAX ERROR in $FILE:\" >&2; echo \"$OUTPUT\" >&2; exit 2; fi; fi; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -q '/bin/'; then OUTPUT=$(shellcheck \"$FILE\" 2>&1); if [ $? -ne 0 ]; then echo \"SHELLCHECK ERRORS in $FILE:\" >&2; echo \"$OUTPUT\" >&2; exit 2; fi; fi; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -q 'Brewfile$'; then awk '/^(tap|brew|cask|mas) /{type=$1; name=$0; if(type==prev_type && name<prev_name){print \"Out of order: \" prev_name \" before \" name > \"/dev/stderr\"; err=1} prev_type=type; prev_name=name}END{exit (err?1:0)}' \"$FILE\"; if [ $? -ne 0 ]; then echo \"BREWFILE ORDERING ERROR\" >&2; exit 2; fi; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'BLOCKED: git rebase is aliased to interactive mode in this repo. Do not use in automation.' >&2; exit 2",
+            "if": "Bash(git rebase*)"
+          }
+        ]
+      }
+    ]
+  }
+}
