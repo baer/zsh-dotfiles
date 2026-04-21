@@ -32,7 +32,9 @@ source "$_ADOPT_SH_DIR/brewfile.sh"
 # Returns 0 if running, 1 if not.
 _app_is_running() {
   local app_base="$1"
-  pgrep -fi "$app_base" > /dev/null 2>&1
+  # Match the .app/ bundle path to avoid false positives from system
+  # processes (e.g. "Cursor" matching macOS's "CursorUIViewService").
+  pgrep -fi "$app_base\.app/" > /dev/null 2>&1
 }
 
 # Gracefully quit a running app, escalating from AppleScript to SIGTERM.
@@ -65,7 +67,7 @@ _prompt_quit_app() {
   fi
 
   # Force-quit via SIGTERM
-  pkill -fi "$app_base" 2>/dev/null
+  pkill -fi "$app_base\.app/" 2>/dev/null
   sleep 2
 
   if _app_is_running "$app_base"; then
@@ -137,11 +139,19 @@ _adopt_cask() {
   local app_base="${app_name%.app}"
 
   # Fast path: --adopt claims existing artifacts without trash/reinstall
+  local adopt_output adopt_rc
   spinner_start "brew install --cask --adopt $cask"
-  if brew install --cask --adopt "$cask" >> "$LOGFILE" 2>&1; then
+  adopt_output="$(brew install --cask --adopt "$cask" 2>&1)"
+  adopt_rc=$?
+  echo "$adopt_output" >> "$LOGFILE"
+  if (( adopt_rc == 0 )); then
     spinner_stop ok "brew install --cask --adopt $cask"
   else
     spinner_stop warn "brew install --cask --adopt $cask (falling back to reinstall)"
+    # Surface the brew error so the user isn't left guessing
+    local adopt_reason
+    adopt_reason="$(echo "$adopt_output" | grep -iE 'error|conflict|mismatch|already|exists|failed' | tail -1)"
+    [[ -n "$adopt_reason" ]] && log_warn "$adopt_reason"
 
     # Fallback: trash + clean install (version mismatch, etc.)
     if _app_is_running "$app_base"; then
