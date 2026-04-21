@@ -14,32 +14,26 @@ LOGFILE="$DOTFILES_ROOT/.brew-audit.log"
 
 # shellcheck source=lib/output.sh
 source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/brewfile.sh
+source "$DOTFILES_ROOT/script/lib/brewfile.sh"
+# shellcheck source=lib/skip-lists.sh
+source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
+# shellcheck source=lib/drift.sh
+source "$DOTFILES_ROOT/script/lib/drift.sh"
+# shellcheck source=lib/cask-detect.sh
+source "$DOTFILES_ROOT/script/lib/cask-detect.sh"
 
 # Source localrc to pick up HOMEBREW_BUNDLE_CASK_SKIP
 # shellcheck disable=SC1091
 [[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
 
 IGNORE_FILE="$HOME/.brew-audit-ignore"
+export AUDIT_IGNORE_FILE="$IGNORE_FILE"
 BREWFILE="$DOTFILES_ROOT/Brewfile"
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_is_ignored() {
-  local pkg="$1"
-  [[ -f "$IGNORE_FILE" ]] && grep -qx "$pkg" "$IGNORE_FILE" 2>/dev/null
-}
-
-_is_in_cask_skip() {
-  local pkg="$1"
-  echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $pkg "
-}
-
-_is_in_mas_skip() {
-  local pkg="$1"
-  echo " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " | grep -q " $pkg "
-}
 
 _remove_tap() {
   local tap="$1"
@@ -91,94 +85,6 @@ _add_to_ignore() {
   fi
   echo "$pkg" >> "$IGNORE_FILE"
   log_success "Added $pkg to ignore list"
-}
-
-# Add a formula or cask to the Brewfile in the correct section, alphabetically.
-_add_to_brewfile() {
-  local type="$1" pkg="$2"
-  local line="$type '$pkg'"
-
-  # Find the last line of the section to determine insertion range
-  local section_pattern="^${type} '"
-  local last_section_line
-  last_section_line="$(grep -n "$section_pattern" "$BREWFILE" | tail -1 | cut -d: -f1)"
-
-  if [[ -z "$last_section_line" ]]; then
-    # Section doesn't exist — append to end of file
-    echo "" >> "$BREWFILE"
-    echo "$line" >> "$BREWFILE"
-  else
-    # Find correct alphabetical position within section
-    local inserted=false
-    local tmp
-    tmp="$(mktemp)"
-    while IFS= read -r existing; do
-      if [[ "$inserted" == false ]] && [[ "$existing" =~ ^${type}\ \' ]]; then
-        local existing_name
-        existing_name="$(echo "$existing" | awk -F"'" '{print $2}')"
-        if [[ "$pkg" < "$existing_name" ]]; then
-          echo "$line" >> "$tmp"
-          inserted=true
-        fi
-      fi
-      echo "$existing" >> "$tmp"
-    done < "$BREWFILE"
-
-    if [[ "$inserted" == false ]]; then
-      # Append after the last entry in the section
-      sed -i '' "${last_section_line}a\\
-${line}
-" "$BREWFILE"
-    else
-      mv "$tmp" "$BREWFILE"
-    fi
-    rm -f "$tmp"
-  fi
-
-  log_success "Added $line to Brewfile"
-}
-
-# Add a mas entry to the Brewfile in the correct section, alphabetically.
-# Args: app_name app_id
-_add_mas_to_brewfile() {
-  local name="$1" id="$2"
-  local line="mas '${name}', id: ${id}"
-
-  local section_pattern="^mas '"
-  local last_section_line
-  last_section_line="$(grep -n "$section_pattern" "$BREWFILE" | tail -1 | cut -d: -f1)"
-
-  if [[ -z "$last_section_line" ]]; then
-    # mas section doesn't exist — append to end of file
-    echo "" >> "$BREWFILE"
-    echo "$line" >> "$BREWFILE"
-  else
-    local inserted=false
-    local tmp
-    tmp="$(mktemp)"
-    while IFS= read -r existing; do
-      if [[ "$inserted" == false ]] && [[ "$existing" =~ ^mas\ \' ]]; then
-        local existing_name
-        existing_name="$(echo "$existing" | awk -F"'" '{print $2}')"
-        if [[ "$name" < "$existing_name" ]]; then
-          echo "$line" >> "$tmp"
-          inserted=true
-        fi
-      fi
-      echo "$existing" >> "$tmp"
-    done < "$BREWFILE"
-
-    if [[ "$inserted" == false ]]; then
-      sed -i '' "${last_section_line}a\\
-${line}
-" "$BREWFILE"
-    else
-      mv "$tmp" "$BREWFILE"
-    fi
-    rm -f "$tmp"
-  fi
-
-  log_success "Added $line to Brewfile"
 }
 
 # Remove a cask from HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc
@@ -252,7 +158,7 @@ _adopt_cask() {
 
   # Update Brewfile if not already listed
   if ! grep -qx "cask '$cask'" "$BREWFILE"; then
-    _add_to_brewfile "cask" "$cask"
+    _brewfile_insert "cask" "$cask"
   fi
 
   # Remove from skip list if present
@@ -276,26 +182,7 @@ trap '_on_exit' EXIT
 
 printf "\n  ${_BOLD}brew-audit${_RST}\n\n"
 
-# Collect expected taps from Brewfile
-_expected_taps=()
-while IFS= read -r _tap_line; do
-  _expected_taps+=("$_tap_line")
-done < <(grep "^tap " "$BREWFILE" | sed "s/tap '\\(.*\\)'/\\1/")
-
-# Collect drifted taps
-drift_taps=()
-while IFS= read -r _tap; do
-  [[ -z "$_tap" ]] && continue
-  [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" || "$_tap" == "homebrew/bundle" ]] && continue
-  _is_ignored "$_tap" && continue
-  _is_expected=false
-  for _t in "${_expected_taps[@]:-}"; do
-    [[ "$_t" == "$_tap" ]] && { _is_expected=true; break; }
-  done
-  if ! $_is_expected; then
-    drift_taps+=("$_tap")
-  fi
-done < <(brew tap 2>/dev/null)
+mapfile -t drift_taps < <(_collect_drift_taps)
 
 # Display tap drift
 if [[ ${#drift_taps[@]} -gt 0 ]]; then
@@ -306,35 +193,18 @@ if [[ ${#drift_taps[@]} -gt 0 ]]; then
   printf "\n"
 fi
 
-# Collect drifted formulae
-drift_formulae=()
-while IFS= read -r leaf; do
-  _is_ignored "$leaf" && continue
-  grep -qx "brew '$leaf'" "$BREWFILE" || drift_formulae+=("$leaf")
-done < <(brew leaves 2>/dev/null)
+mapfile -t drift_formulae < <(_collect_drift_formulae)
 
-# Collect drifted casks
-drift_casks=()
-while IFS= read -r cask; do
-  _is_in_cask_skip "$cask" && continue
-  _is_ignored "$cask" && continue
-  grep -qx "cask '$cask'" "$BREWFILE" || drift_casks+=("$cask")
-done < <(brew list --cask 2>/dev/null)
+mapfile -t drift_casks < <(_collect_drift_casks)
 
-# Collect drifted mas apps
 drift_mas=()
 if command -v mas &>/dev/null; then
-  while IFS= read -r _mas_line; do
-    [[ -z "$_mas_line" ]] && continue
-    _mas_id="$(echo "$_mas_line" | awk '{print $1}')"
-    _mas_name="$(echo "$_mas_line" | sed 's/^[0-9]* *//' | sed 's/ *(.*$//')"
-    [[ -z "$_mas_id" ]] && continue
-    _is_in_mas_skip "$_mas_id" && continue
-    _is_ignored "$_mas_id" && continue
-    if ! grep -q "id: ${_mas_id}$" "$BREWFILE"; then
-      drift_mas+=("${_mas_id}:${_mas_name}")
-    fi
-  done < <(mas list 2>/dev/null)
+  while IFS= read -r _drift_line; do
+    [[ -z "$_drift_line" ]] && continue
+    local _mas_id="${_drift_line%% *}"
+    local _mas_name="${_drift_line#* }"
+    drift_mas+=("${_mas_id}:${_mas_name}")
+  done < <(_collect_drift_mas)
 fi
 
 # Display drift results
@@ -399,7 +269,7 @@ if [[ "$_scan_response" =~ ^[yY]$ ]]; then
     echo "$_brew_casks" | grep -qx "$candidate" && continue
 
     # Skip if ignored
-    _is_ignored "$candidate" && continue
+    _is_audit_ignored "$candidate" && continue
 
     # Check if a brew cask exists for this candidate
     if brew info --cask "$candidate" > /dev/null 2>&1; then
@@ -464,11 +334,11 @@ case "$_review_response" in
     ;;
   1)
     # Add all drift items to Brewfile
-    for t in "${drift_taps[@]}"; do _add_to_brewfile "tap" "$t"; done
-    for f in "${drift_formulae[@]}"; do _add_to_brewfile "brew" "$f"; done
-    for c in "${drift_casks[@]}"; do _add_to_brewfile "cask" "$c"; done
+    for t in "${drift_taps[@]}"; do _brewfile_insert "tap" "$t"; done
+    for f in "${drift_formulae[@]}"; do _brewfile_insert "brew" "$f"; done
+    for c in "${drift_casks[@]}"; do _brewfile_insert "cask" "$c"; done
     for m in "${drift_mas[@]}"; do
-      _add_mas_to_brewfile "${m#*:}" "${m%%:*}"
+      _brewfile_insert "mas" "${m#*:}" "${m%%:*}"
     done
     # Adopt all adoptable apps
     for i in "${!adoptable_casks[@]}"; do
@@ -483,7 +353,7 @@ case "$_review_response" in
       _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (untap)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
-        1) _add_to_brewfile "tap" "$t" ;;
+        1) _brewfile_insert "tap" "$t" ;;
         2) _remove_tap "$t" ;;
         3) _add_to_ignore "$t" ;;
         4) ;;
@@ -496,7 +366,7 @@ case "$_review_response" in
       _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
-        1) _add_to_brewfile "brew" "$f" ;;
+        1) _brewfile_insert "brew" "$f" ;;
         2) _remove_formula "$f" ;;
         3) _add_to_ignore "$f" ;;
         4) ;;
@@ -509,7 +379,7 @@ case "$_review_response" in
       _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
-        1) _add_to_brewfile "cask" "$c" ;;
+        1) _brewfile_insert "cask" "$c" ;;
         2) _remove_cask "$c" ;;
         3) _add_to_ignore "$c" ;;
         4) ;;
@@ -524,7 +394,7 @@ case "$_review_response" in
       _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
       printf "\n"
       case "$_item_response" in
-        1) _add_mas_to_brewfile "$_mname" "$_mid" ;;
+        1) _brewfile_insert "mas" "$_mname" "$_mid" ;;
         2) _add_to_ignore "$_mid" ;;
         3) ;;
       esac
@@ -538,7 +408,7 @@ case "$_review_response" in
       case "$_item_response" in
         1) _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true ;;
         2)
-          _add_to_brewfile "cask" "${adoptable_casks[$i]}"
+          _brewfile_insert "cask" "${adoptable_casks[$i]}"
           log_warn "Manual copy still in /Applications — next brew bundle may skip or conflict"
           ;;
         3) _add_to_ignore "${adoptable_casks[$i]}" ;;
