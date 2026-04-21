@@ -130,24 +130,16 @@ _remove_cask() {
     return 0
   fi
 
-  spinner_stop fail "brew uninstall --cask $cask"
-  _show_brew_error "$output"
-
-  if [[ "$INTERACTIVE" == true ]]; then
-    local _confirm
-    _confirm="$(prompt_user "Retry with --force? [y/N]" "n")"
-    if [[ "$_confirm" =~ ^[yY]$ ]]; then
-      rc=0
-      spinner_start "brew uninstall --force --cask $cask"
-      output="$(brew uninstall --force --cask "$cask" 2>&1)" || rc=$?
-      printf '%s\n' "$output" >> "$LOGFILE"
-      if [[ $rc -eq 0 ]]; then
-        spinner_stop ok "brew uninstall --force --cask $cask"
-      else
-        spinner_stop fail "brew uninstall --force --cask $cask"
-        _show_brew_error "$output"
-      fi
-    fi
+  # Auto-retry with --force (common for "already an App at" errors)
+  rc=0
+  spinner_start "brew uninstall --force --cask $cask"
+  output="$(brew uninstall --force --cask "$cask" 2>&1)" || rc=$?
+  printf '%s\n' "$output" >> "$LOGFILE"
+  if [[ $rc -eq 0 ]]; then
+    spinner_stop ok "brew uninstall --force --cask $cask"
+  else
+    spinner_stop fail "brew uninstall --force --cask $cask"
+    _show_brew_error "$output"
   fi
 }
 
@@ -437,14 +429,18 @@ for item in "${_adopt_items[@]}"; do
   _adopt_cask "$cask_name" "$app_name" || true
 done
 
-# Execute: Removals
+# Execute: Removals (formulae & casks first, taps last)
 for item in "${_remove_items[@]}"; do
   IFS=$'\t' read -r pkg typ <<< "$item"
-  case "$typ" in
-    tap)     _remove_tap "$pkg" ;;
-    formula) _remove_formula "$pkg" ;;
-    cask)    _remove_cask "$pkg" ;;
-  esac
+  [[ "$typ" == "formula" ]] && _remove_formula "$pkg"
+done
+for item in "${_remove_items[@]}"; do
+  IFS=$'\t' read -r pkg typ <<< "$item"
+  [[ "$typ" == "cask" ]] && _remove_cask "$pkg"
+done
+for item in "${_remove_items[@]}"; do
+  IFS=$'\t' read -r pkg typ <<< "$item"
+  [[ "$typ" == "tap" ]] && _remove_tap "$pkg"
 done
 
 # Execute: Ignores
