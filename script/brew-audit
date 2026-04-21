@@ -44,13 +44,30 @@ BREWFILE="$DOTFILES_ROOT/Brewfile"
 # Helpers
 # ---------------------------------------------------------------------------
 
+_show_brew_error() {
+  local output="$1"
+  local error_lines
+  error_lines="$(printf '%s\n' "$output" | grep -i '^Error:\|^Warning:' | head -3)"
+  if [[ -n "$error_lines" ]]; then
+    while IFS= read -r line; do
+      printf "    ${_DIM}%s${_RST}\n" "$line"
+    done <<< "$error_lines"
+  fi
+}
+
 _remove_tap() {
   local tap="$1"
+  local output rc=0
+
   spinner_start "brew untap $tap"
-  if brew untap "$tap" >> "$LOGFILE" 2>&1; then
+  output="$(brew untap "$tap" 2>&1)" || rc=$?
+  printf '%s\n' "$output" >> "$LOGFILE"
+
+  if [[ $rc -eq 0 ]]; then
     spinner_stop ok "brew untap $tap"
   else
-    spinner_stop fail "brew untap $tap (see .brew-audit.log)"
+    spinner_stop fail "brew untap $tap"
+    _show_brew_error "$output"
   fi
 }
 
@@ -68,21 +85,69 @@ _remove_formula() {
       return 0
     fi
   fi
+
+  local output rc=0
   spinner_start "brew uninstall $formula"
-  if brew uninstall "$formula" >> "$LOGFILE" 2>&1; then
+  output="$(brew uninstall "$formula" 2>&1)" || rc=$?
+  printf '%s\n' "$output" >> "$LOGFILE"
+
+  if [[ $rc -eq 0 ]]; then
     spinner_stop ok "brew uninstall $formula"
-  else
-    spinner_stop fail "brew uninstall $formula (see .brew-audit.log)"
+    return 0
+  fi
+
+  spinner_stop fail "brew uninstall $formula"
+  _show_brew_error "$output"
+
+  if [[ "$INTERACTIVE" == true ]]; then
+    local _confirm
+    _confirm="$(prompt_user "Retry with --force? [y/N]" "n")"
+    if [[ "$_confirm" =~ ^[yY]$ ]]; then
+      rc=0
+      spinner_start "brew uninstall --force $formula"
+      output="$(brew uninstall --force "$formula" 2>&1)" || rc=$?
+      printf '%s\n' "$output" >> "$LOGFILE"
+      if [[ $rc -eq 0 ]]; then
+        spinner_stop ok "brew uninstall --force $formula"
+      else
+        spinner_stop fail "brew uninstall --force $formula"
+        _show_brew_error "$output"
+      fi
+    fi
   fi
 }
 
 _remove_cask() {
   local cask="$1"
+  local output rc=0
+
   spinner_start "brew uninstall --cask $cask"
-  if brew uninstall --cask "$cask" >> "$LOGFILE" 2>&1; then
+  output="$(brew uninstall --cask "$cask" 2>&1)" || rc=$?
+  printf '%s\n' "$output" >> "$LOGFILE"
+
+  if [[ $rc -eq 0 ]]; then
     spinner_stop ok "brew uninstall --cask $cask"
-  else
-    spinner_stop fail "brew uninstall --cask $cask (see .brew-audit.log)"
+    return 0
+  fi
+
+  spinner_stop fail "brew uninstall --cask $cask"
+  _show_brew_error "$output"
+
+  if [[ "$INTERACTIVE" == true ]]; then
+    local _confirm
+    _confirm="$(prompt_user "Retry with --force? [y/N]" "n")"
+    if [[ "$_confirm" =~ ^[yY]$ ]]; then
+      rc=0
+      spinner_start "brew uninstall --force --cask $cask"
+      output="$(brew uninstall --force --cask "$cask" 2>&1)" || rc=$?
+      printf '%s\n' "$output" >> "$LOGFILE"
+      if [[ $rc -eq 0 ]]; then
+        spinner_stop ok "brew uninstall --force --cask $cask"
+      else
+        spinner_stop fail "brew uninstall --force --cask $cask"
+        _show_brew_error "$output"
+      fi
+    fi
   fi
 }
 
@@ -269,6 +334,7 @@ fi
 _fzf_rc=0
 _render_triage | fzf --ansi --no-sort --reverse \
   --disabled --no-info --prompt "" \
+  --bind 'start:hide-input' \
   --header $'←/→ change action   ↑/↓ navigate   enter confirm   esc quit' \
   --header-first \
   --track --id-nth=2 \
