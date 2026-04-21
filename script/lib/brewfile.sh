@@ -10,6 +10,11 @@
 [[ -n "${_BREWFILE_SH_LOADED:-}" ]] && return 0 2>/dev/null || true
 _BREWFILE_SH_LOADED=1
 
+# Source dependencies
+_BREWFILE_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=log.sh
+source "$_BREWFILE_SH_DIR/log.sh"
+
 # List names in a Brewfile section, one per line.
 # Args: type ("tap"|"brew"|"cask"|"mas")
 _brewfile_list_section() {
