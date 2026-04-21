@@ -431,8 +431,8 @@ done
 # Execute: Adoptions
 for item in "${_adopt_items[@]}"; do
   IFS=$'\t' read -r display app_name <<< "$item"
-  # Extract cask name from "AppName.app → cask-name" display format
-  cask_name="${display##* → }"
+  # Extract cask name from "AppName.app -> cask-name" display format
+  cask_name="${display##* -> }"
   _adopt_cask "$cask_name" "$app_name" || true
 done
 
@@ -456,7 +456,7 @@ for item in "${_ignore_items[@]}"; do
   if [[ "$typ" == "mas" ]]; then
     _add_to_ignore "$extra"
   elif [[ "$typ" == "adopt" ]]; then
-    _add_to_ignore "${pkg##* → }"
+    _add_to_ignore "${pkg##* -> }"
   else
     _add_to_ignore "$pkg"
   fi

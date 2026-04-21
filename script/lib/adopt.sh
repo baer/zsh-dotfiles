@@ -35,19 +35,39 @@ _app_is_running() {
   pgrep -fi "$app_base" > /dev/null 2>&1
 }
 
-# Prompt the user to quit a running app.
-# Warns, waits for input, re-checks the process.
-# Returns 0 if safe to proceed, 1 if user skipped or app still running.
+# Gracefully quit a running app, escalating from AppleScript to SIGTERM.
+# Returns 0 if the app is no longer running, 1 if user skipped or quit failed.
 _prompt_quit_app() {
   local app_base="$1"
-  log_warn "$app_base is running. Please quit it before continuing."
-  printf "    Press Enter when ready, or 's' to skip... "
+
+  # Try graceful AppleScript quit first
+  log_warn "$app_base is running. Attempting to quit…"
+  osascript -e "quit app \"$app_base\"" 2>/dev/null
+
+  # Wait up to 5 seconds for the app to exit
+  local waited=0
+  while (( waited < 5 )) && _app_is_running "$app_base"; do
+    sleep 1
+    (( waited++ ))
+  done
+
+  if ! _app_is_running "$app_base"; then
+    return 0
+  fi
+
+  # AppleScript quit didn't work — ask user
+  log_warn "$app_base is still running after quit signal."
+  printf "    Press Enter to force-quit, or 's' to skip... "
   local response
   read -r response
   if [[ "$response" == "s" ]]; then
     return 1
   fi
-  # Re-check after user claims they quit
+
+  # Force-quit via SIGTERM
+  pkill -fi "$app_base" 2>/dev/null
+  sleep 2
+
   if _app_is_running "$app_base"; then
     log_error "$app_base is still running — skipping"
     return 1
@@ -55,17 +75,25 @@ _prompt_quit_app() {
   return 0
 }
 
-# Move an .app bundle to Trash.
+# Move an .app bundle to Trash using the Finder API (handles SIP/permissions).
+# Falls back to mv if AppleScript fails (e.g. headless session).
 # Returns 0 on success (or if path doesn't exist), 1 on failure.
 _trash_app() {
   local app_path="$1"
   [[ -d "$app_path" ]] || return 0  # nothing to trash
+
+  # Finder API respects macOS permissions and shows auth dialogs when needed
+  if osascript -e "tell application \"Finder\" to delete POSIX file \"$app_path\"" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Fallback: direct mv (works for user-owned apps without SIP)
   if mv "$app_path" "$HOME/.Trash/" 2>/dev/null; then
     return 0
-  else
-    log_error "Could not move $(basename "$app_path") to Trash (permissions?)"
-    return 1
   fi
+
+  log_error "Could not move $(basename "$app_path") to Trash (permissions?)"
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -125,6 +153,15 @@ _adopt_cask() {
       return 1
     fi
 
+    # The manual app is gone — remove from skip list now so brew bundle
+    # can recover this cask if the install below fails.
+    _remove_from_skip_list "$cask"
+
+    # Ensure cask is in Brewfile before install attempt (same recovery reason)
+    if ! grep -qx "cask '$cask'" "$BREWFILE"; then
+      _brewfile_insert "cask" "$cask"
+    fi
+
     spinner_start "brew install --cask $cask"
     if brew install --cask "$cask" >> "$LOGFILE" 2>&1; then
       spinner_stop ok "brew install --cask $cask"
@@ -134,12 +171,12 @@ _adopt_cask() {
     fi
   fi
 
-  # Update Brewfile if not already listed
+  # Update Brewfile if not already listed (fast-path --adopt doesn't go above)
   if ! grep -qx "cask '$cask'" "$BREWFILE"; then
     _brewfile_insert "cask" "$cask"
   fi
 
-  # Remove from skip list if present
+  # Remove from skip list if present (fast-path --adopt doesn't go above)
   _remove_from_skip_list "$cask"
 
   return 0
