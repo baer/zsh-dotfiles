@@ -3,8 +3,3 @@
 # Packages listed here are excluded from brew-audit drift detection.
 # Add formula or cask names, one per line.
 # Lines starting with # are comments.
-gusto/gusto
-gusto/gusto/gusto-lima
-gusto/gusto/mailhog
-gusto/gusto/pdftk
-gusto/gusto/wait-for-it

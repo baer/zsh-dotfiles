@@ -60,6 +60,7 @@ brew 'zsh-fast-syntax-highlighting'
 
 cask '1password'
 cask 'audacity'
+cask 'claude'
 cask 'cloudflare-warp'
 cask 'claude-code'
 cask 'codex'
