@@ -108,24 +108,30 @@ _adopt_cask() {
   local app_path="/Applications/$app_name"
   local app_base="${app_name%.app}"
 
-  # Check if running
-  if _app_is_running "$app_base"; then
-    _prompt_quit_app "$app_base" || { log_info "Skipped $cask"; return 1; }
-  fi
-
-  # Trash the manual install
-  if ! _trash_app "$app_path"; then
-    log_info "Skipping adoption of $cask"
-    return 1
-  fi
-
-  # Install via brew
-  spinner_start "brew install --cask $cask"
-  if brew install --cask "$cask" >> "$LOGFILE" 2>&1; then
-    spinner_stop ok "brew install --cask $cask"
+  # Fast path: --adopt claims existing artifacts without trash/reinstall
+  spinner_start "brew install --cask --adopt $cask"
+  if brew install --cask --adopt "$cask" >> "$LOGFILE" 2>&1; then
+    spinner_stop ok "brew install --cask --adopt $cask"
   else
-    spinner_stop fail "brew install --cask $cask (see ${LOGFILE##*/} for details)"
-    return 1
+    spinner_stop warn "brew install --cask --adopt $cask (falling back to reinstall)"
+
+    # Fallback: trash + clean install (version mismatch, etc.)
+    if _app_is_running "$app_base"; then
+      _prompt_quit_app "$app_base" || { log_info "Skipped $cask"; return 1; }
+    fi
+
+    if ! _trash_app "$app_path"; then
+      log_info "Skipping adoption of $cask"
+      return 1
+    fi
+
+    spinner_start "brew install --cask $cask"
+    if brew install --cask "$cask" >> "$LOGFILE" 2>&1; then
+      spinner_stop ok "brew install --cask $cask"
+    else
+      spinner_stop fail "brew install --cask $cask (see ${LOGFILE##*/} for details)"
+      return 1
+    fi
   fi
 
   # Update Brewfile if not already listed

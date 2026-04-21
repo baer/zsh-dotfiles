@@ -93,18 +93,9 @@ _collect_drift_mas() {
 # Prints integer count to stdout.
 _count_total_drift() {
   local count=0
-  local line
-  while IFS= read -r line; do
-    [[ -n "$line" ]] && count=$((count + 1))
-  done < <(_collect_drift_taps)
-  while IFS= read -r line; do
-    [[ -n "$line" ]] && count=$((count + 1))
-  done < <(_collect_drift_formulae)
-  while IFS= read -r line; do
-    [[ -n "$line" ]] && count=$((count + 1))
-  done < <(_collect_drift_casks)
-  while IFS= read -r line; do
-    [[ -n "$line" ]] && count=$((count + 1))
-  done < <(_collect_drift_mas)
+  count=$(( count + $(_collect_drift_taps | grep -c '.' || true) ))
+  count=$(( count + $(_collect_drift_formulae | grep -c '.' || true) ))
+  count=$(( count + $(_collect_drift_casks | grep -c '.' || true) ))
+  count=$(( count + $(_collect_drift_mas | grep -c '.' || true) ))
   echo "$count"
 }

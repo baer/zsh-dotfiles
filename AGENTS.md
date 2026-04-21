@@ -44,6 +44,7 @@ Automated (PostToolUse hooks run on every Edit/Write):
 Manual (run after completing changes):
 - `reload!` or `source ~/.zshrc` -- verify shell changes load without errors
 - `brew bundle` -- verify Brewfile installs correctly
+- `bats script/test/lib/` -- run the BATS test suite for script library functions
 
 ## Work Machines
 

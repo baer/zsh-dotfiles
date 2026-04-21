@@ -79,12 +79,15 @@ _spinner_stop_impl() {
     _SPINNER_STATUS_FILE=""
   fi
 
-  case "$status" in
-    ok)   printf "%s%s %s\n" "$indent" "$_CHECK" "$message" ;;
-    fail) printf "%s%s %s\n" "$indent" "$_CROSS" "$message" >&2 ;;
-    warn) printf "%s%s %s\n" "$indent" "$_WARN"  "$message" ;;
-    skip) printf "%s%s %s\n" "$indent" "$_SKIP"  "${_DIM}$message${_RST}" ;;
-  esac
+  local sym
+  sym="$(_status_sym "$status")"
+  if [[ "$status" == "fail" ]]; then
+    printf "%s%s %s\n" "$indent" "$sym" "$message" >&2
+  elif [[ "$status" == "skip" ]]; then
+    printf "%s%s %s\n" "$indent" "$sym" "${_DIM}$message${_RST}"
+  else
+    printf "%s%s %s\n" "$indent" "$sym" "$message"
+  fi
 }
 
 # Kill spinner on unexpected exit (sourced into caller's trap chain)

@@ -275,43 +275,30 @@ case "$_review_response" in
     ;;
   2)
     # Review one by one
-    # Drift taps
+
+    # Shared review for taps/formulae/casks: Add | Remove | Ignore | Skip
+    _review_drift_item() {
+      local type="$1" name="$2" display="$3" remove_label="$4" remove_fn="$5"
+      printf "  %s\n" "$display"
+      local resp
+      resp="$(prompt_choice "Action" "Add to Brewfile" "$remove_label" "Ignore (permanent)" "Skip (for now)")"
+      printf "\n"
+      case "$resp" in
+        1) _brewfile_insert "$type" "$name" ;;
+        2) "$remove_fn" "$name" ;;
+        3) _add_to_ignore "$name" ;;
+        4) ;;
+      esac
+    }
+
     for t in "${drift_taps[@]}"; do
-      printf "  %s (tap)\n" "$t"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (untap)" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$_item_response" in
-        1) _brewfile_insert "tap" "$t" ;;
-        2) _remove_tap "$t" ;;
-        3) _add_to_ignore "$t" ;;
-        4) ;;
-      esac
+      _review_drift_item "tap" "$t" "$t (tap)" "Remove (untap)" _remove_tap
     done
-
-    # Drift formulae
     for f in "${drift_formulae[@]}"; do
-      printf "  %s\n" "$f"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$_item_response" in
-        1) _brewfile_insert "brew" "$f" ;;
-        2) _remove_formula "$f" ;;
-        3) _add_to_ignore "$f" ;;
-        4) ;;
-      esac
+      _review_drift_item "brew" "$f" "$f" "Remove (uninstall)" _remove_formula
     done
-
-    # Drift casks
     for c in "${drift_casks[@]}"; do
-      printf "  %s\n" "$c"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Remove (uninstall)" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$_item_response" in
-        1) _brewfile_insert "cask" "$c" ;;
-        2) _remove_cask "$c" ;;
-        3) _add_to_ignore "$c" ;;
-        4) ;;
-      esac
+      _review_drift_item "cask" "$c" "$c" "Remove (uninstall)" _remove_cask
     done
 
     # Drift mas apps

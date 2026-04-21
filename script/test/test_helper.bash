@@ -2,15 +2,15 @@
 # test_helper.bash — shared setup for bats tests
 #
 # Provides:
-#   - FIXTURES_DIR pointing to test/fixtures/
+#   - FIXTURES_DIR pointing to script/test/fixtures/
 #   - copy_fixture() to copy a fixture Brewfile to BATS_TEST_TMPDIR
-#   - Stubs for output.sh functions (log_success, etc.)
+#   - Stubs for log.sh functions (log_success, etc.)
 #   - DOTFILES_ROOT and BREWFILE set for library sourcing
 
 FIXTURES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/fixtures" && pwd)"
-DOTFILES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOTFILES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# Stub output.sh functions so libraries don't need the real output.sh
+# Stub log.sh functions so libraries don't need the real log.sh
 log_success() { :; }
 log_error() { :; }
 log_warn() { :; }

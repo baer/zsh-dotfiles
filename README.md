@@ -25,6 +25,13 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 
 `atuin` `bin` `claude` `editors` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
 
+### Infrastructure (not topics)
+
+| Directory | Purpose |
+|-----------|---------|
+| `script/` | Bootstrap, Homebrew maintenance tools, shared libraries, and tests |
+| `docs/` | Development plans and specs |
+
 ### File Conventions
 
 | Pattern | Behavior |

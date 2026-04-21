@@ -33,7 +33,7 @@ _COL_TIMING=5
 _pad_to_width() {
   local target_w="$1" str="$2"
   local stripped
-  stripped="$(printf '%s' "$str" | sed $'s/\e\\[[0-9;]*m//g')"
+  stripped="$(_strip_ansi "$str")"
   local visible_len=${#stripped}
   local pad=$((target_w - visible_len))
   if [[ $pad -gt 0 ]]; then
@@ -120,6 +120,9 @@ phase_end() {
   local timing
   timing="$(_phase_timer_elapsed "$name")"
 
+  local sym
+  sym="$(_status_sym "$status")"
+
   if [[ "$INTERACTIVE" == true ]] && _is_tty; then
     # Enforce minimum spin duration so there's always visible motion.
     local elapsed=$((SECONDS - _ACTIVE_PHASE_START))
@@ -127,40 +130,13 @@ phase_end() {
       sleep "$_PHASE_MIN_SPIN"
     fi
 
-    # Kill spinner and clear line
-    if [[ -n "${_SPINNER_PID:-}" ]]; then
-      kill "$_SPINNER_PID" 2>/dev/null || true
-      wait "$_SPINNER_PID" 2>/dev/null || true
-      _SPINNER_PID=""
-      printf "\r\e[2K"
-    fi
-    if [[ -n "${_SPINNER_STATUS_FILE:-}" ]]; then
-      rm -f "$_SPINNER_STATUS_FILE"
-      _SPINNER_STATUS_FILE=""
-    fi
-
-    # Print resolved line with status, detail, and timing
-    local sym
-    case "$status" in
-      ok)   sym="$_CHECK" ;;
-      fail) sym="$_CROSS" ;;
-      warn) sym="$_WARN"  ;;
-      skip) sym="$_SKIP"  ;;
-    esac
+    _spinner_cleanup
 
     # Format: "  ✓ Phase Name          detail text              <1s"
     _format_status_row "$sym" "$name" "$detail" "$timing"
     printf '\n'
   else
-    # Non-TTY: simple output
-    local sym_text
-    case "$status" in
-      ok)   sym_text="$_CHECK" ;;
-      fail) sym_text="$_CROSS" ;;
-      warn) sym_text="$_WARN"  ;;
-      skip) sym_text="$_SKIP"  ;;
-    esac
-    printf "  %s %s — %s  %s\n" "$sym_text" "$name" "$detail" "$timing"
+    printf "  %s %s — %s  %s\n" "$sym" "$name" "$detail" "$timing"
   fi
 
   _ACTIVE_PHASE_NAME=""
@@ -181,17 +157,7 @@ phase_end_deferred() {
       sleep "$_PHASE_MIN_SPIN"
     fi
 
-    # Kill spinner and clear line
-    if [[ -n "${_SPINNER_PID:-}" ]]; then
-      kill "$_SPINNER_PID" 2>/dev/null || true
-      wait "$_SPINNER_PID" 2>/dev/null || true
-      _SPINNER_PID=""
-      printf "\r\e[2K"
-    fi
-    if [[ -n "${_SPINNER_STATUS_FILE:-}" ]]; then
-      rm -f "$_SPINNER_STATUS_FILE"
-      _SPINNER_STATUS_FILE=""
-    fi
+    _spinner_cleanup
 
     # Print the phase name with a static loading indicator
     printf "  ${_CYAN}%s${_RST} %s\n" "$_BULLET_EMPTY" "$_ACTIVE_PHASE_NAME"
@@ -210,12 +176,7 @@ phase_resolve() {
   timing="$(_phase_timer_elapsed "$name")"
 
   local sym
-  case "$status" in
-    ok)   sym="$_CHECK" ;;
-    fail) sym="$_CROSS" ;;
-    warn) sym="$_WARN"  ;;
-    skip) sym="$_SKIP"  ;;
-  esac
+  sym="$(_status_sym "$status")"
 
   if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ "${_SUBSTEP_CURSOR_DIRTY:-0}" -eq 0 ]]; then
     local lines_to_jump=$_SUBSTEP_COUNT
@@ -251,11 +212,11 @@ phase_resolve() {
 # Pause phase spinner for interactive prompts
 phase_pause() {
   if [[ "$INTERACTIVE" == true ]] && _is_tty && [[ -n "${_SPINNER_PID:-}" ]]; then
+    # Kill spinner but keep _ACTIVE_PHASE_* intact for resume
     kill "$_SPINNER_PID" 2>/dev/null || true
     wait "$_SPINNER_PID" 2>/dev/null || true
     _SPINNER_PID=""
     printf "\r\e[2K"
-    # Keep _SPINNER_STATUS_FILE and _ACTIVE_PHASE_* intact for resume
   fi
 }
 
@@ -298,12 +259,7 @@ log_summary_box() {
     local idx
     for idx in "${!_statuses[@]}"; do
       local sym
-      case "${_statuses[$idx]}" in
-        ok)   sym="$_CHECK" ;;
-        fail) sym="$_CROSS" ;;
-        warn) sym="$_WARN"  ;;
-        skip) sym="$_SKIP"  ;;
-      esac
+      sym="$(_status_sym "${_statuses[$idx]}")"
       printf "  %s  %-20s %s\n" "$sym" "${_labels[$idx]}" "${_details[$idx]}"
     done
     printf "\n  Done in %s\n" "$total_time"
@@ -333,12 +289,7 @@ log_summary_box() {
   local idx
   for idx in "${!_statuses[@]}"; do
     local sym
-    case "${_statuses[$idx]}" in
-      ok)   sym="$_CHECK" ;;
-      fail) sym="$_CROSS" ;;
-      warn) sym="$_WARN"  ;;
-      skip) sym="$_SKIP"  ;;
-    esac
+    sym="$(_status_sym "${_statuses[$idx]}")"
 
     local label="${_labels[$idx]}"
     local detail="${_details[$idx]}"

@@ -51,6 +51,19 @@ _WARN="${_YELLOW}⚠${_RST}"
 _SKIP="${_DIM}-${_RST}"
 _INFO="${_DIM}·${_RST}"
 
+# Map status name to symbol: _status_sym ok → $_CHECK, etc.
+_status_sym() {
+  case "$1" in
+    ok)   printf '%s' "$_CHECK" ;;
+    fail) printf '%s' "$_CROSS" ;;
+    warn) printf '%s' "$_WARN"  ;;
+    skip) printf '%s' "$_SKIP"  ;;
+  esac
+}
+
+# Strip ANSI escape sequences from a string.
+_strip_ansi() { printf '%s' "$1" | sed $'s/\e\\[[0-9;]*m//g'; }
+
 # ---------------------------------------------------------------------------
 # Box-drawing characters
 # ---------------------------------------------------------------------------
@@ -64,30 +77,21 @@ _BULLET="●" _BULLET_EMPTY="○"
 # ---------------------------------------------------------------------------
 # All box functions take a width parameter (inner content width).
 
-_draw_box_top() {
-  local w="$1" line=""
+_draw_box_hline() {
+  local left="$1" right="$2" w="$3" line=""
   local i; for ((i=0; i<w; i++)); do line+="$_BOX_H"; done
-  printf "  %s%s%s\n" "$_BOX_TL" "$line" "$_BOX_TR"
+  printf "  %s%s%s\n" "$left" "$line" "$right"
 }
 
-_draw_box_bottom() {
-  local w="$1" line=""
-  local i; for ((i=0; i<w; i++)); do line+="$_BOX_H"; done
-  printf "  %s%s%s\n" "$_BOX_BL" "$line" "$_BOX_BR"
-}
-
-_draw_box_divider() {
-  local w="$1" line=""
-  local i; for ((i=0; i<w; i++)); do line+="$_BOX_H"; done
-  printf "  %s%s%s\n" "$_BOX_DIV_L" "$line" "$_BOX_DIV_R"
-}
+_draw_box_top()     { _draw_box_hline "$_BOX_TL"    "$_BOX_TR"    "$1"; }
+_draw_box_bottom()  { _draw_box_hline "$_BOX_BL"    "$_BOX_BR"    "$1"; }
+_draw_box_divider() { _draw_box_hline "$_BOX_DIV_L" "$_BOX_DIV_R" "$1"; }
 
 # Print a row padded to width w. Content is left-aligned, padded with spaces.
 _draw_box_row() {
   local w="$1" content="$2"
-  # Strip ANSI codes to measure visible length
   local stripped
-  stripped="$(printf '%s' "$content" | sed $'s/\e\\[[0-9;]*m//g')"
+  stripped="$(_strip_ansi "$content")"
   local visible_len=${#stripped}
   local pad=$((w - visible_len))
   local spaces=""
