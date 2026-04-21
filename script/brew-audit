@@ -99,7 +99,7 @@ _add_to_ignore() {
 # Traps
 # ---------------------------------------------------------------------------
 
-_on_exit() { _spinner_cleanup; }
+_on_exit() { _spinner_cleanup; rm -f "${_STATE_FILE:-}"; }
 trap '_on_exit' EXIT
 
 # ---------------------------------------------------------------------------
@@ -172,6 +172,53 @@ if [[ "$INTERACTIVE" != true ]]; then
   log_info "$_total packages not in Brewfile (run interactively to resolve)"
   exit 0
 fi
+
+# ---------------------------------------------------------------------------
+# State file for fzf triage
+# ---------------------------------------------------------------------------
+
+_STATE_FILE="$(mktemp)"
+
+# Populate state file — one line per item, all default to "skip"
+for t in "${drift_taps[@]}"; do
+  printf 'skip\t%s\ttap\t\n' "$t" >> "$_STATE_FILE"
+done
+for f in "${drift_formulae[@]}"; do
+  printf 'skip\t%s\tformula\t\n' "$f" >> "$_STATE_FILE"
+done
+for c in "${drift_casks[@]}"; do
+  printf 'skip\t%s\tcask\t\n' "$c" >> "$_STATE_FILE"
+done
+for m in "${drift_mas[@]}"; do
+  _mid="${m%%:*}"
+  _mname="${m#*:}"
+  printf 'skip\t%s\tmas\t%s\n' "$_mname" "$_mid" >> "$_STATE_FILE"
+done
+for i in "${!adoptable_casks[@]}"; do
+  printf 'skip\t%s → %s\tadopt\t%s\n' "${adoptable_apps[$i]}" "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" >> "$_STATE_FILE"
+done
+
+# Render the state file as colored lines for fzf
+_render_triage() {
+  while IFS=$'\t' read -r action pkg typ extra; do
+    case "$action" in
+      add)    printf '\033[32m[add]   \033[0m %-40s %s\n' "$pkg" "$typ" ;;
+      remove) printf '\033[31m[remove]\033[0m %-40s %s\n' "$pkg" "$typ" ;;
+      ignore) printf '\033[90m[ignore]\033[0m %-40s %s\n' "$pkg" "$typ" ;;
+      skip)   printf '\033[90m[skip]  \033[0m %-40s %s\n' "$pkg" "$typ" ;;
+    esac
+  done < "$_STATE_FILE"
+}
+
+# Update one line's action in the state file (line_num is 0-based from fzf {n})
+_update_action() {
+  local line_num="$1" new_action="$2"
+  local sed_line=$(( line_num + 1 ))
+  awk -v ln="$sed_line" -v act="$new_action" 'BEGIN{FS=OFS="\t"} NR==ln{$1=act} 1' "$_STATE_FILE" > "$_STATE_FILE.tmp" && mv "$_STATE_FILE.tmp" "$_STATE_FILE"
+}
+
+export _STATE_FILE
+export -f _render_triage _update_action
 
 # ---------------------------------------------------------------------------
 # Stage 2: fzf Triage Table (placeholder)
