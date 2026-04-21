@@ -99,7 +99,7 @@ _add_to_ignore() {
 # Traps
 # ---------------------------------------------------------------------------
 
-_on_exit() { _spinner_cleanup; rm -f "${_STATE_FILE:-}"; }
+_on_exit() { _spinner_cleanup; rm -f "${_STATE_FILE:-}" "${_STATE_FILE:-}.tmp"; }
 trap '_on_exit' EXIT
 
 # ---------------------------------------------------------------------------
@@ -228,6 +228,10 @@ _update_action() {
 export _STATE_FILE
 export -f _render_triage _update_action
 
+# fzf uses $SHELL for execute-silent and reload subshells;
+# exported functions require bash.
+export SHELL=/bin/bash
+
 # ---------------------------------------------------------------------------
 # Stage 2: fzf Triage Table
 # ---------------------------------------------------------------------------
@@ -249,8 +253,8 @@ _render_triage | fzf --ansi --no-sort --reverse \
   --bind "s:execute-silent(_update_action {n} skip)+reload(_render_triage)+down" \
   > /dev/null || _fzf_rc=$?
 
-if [[ $_fzf_rc -eq 130 ]]; then
-  # User pressed Esc or Ctrl-C
+if [[ $_fzf_rc -ne 0 ]]; then
+  # User pressed Esc/Ctrl-C (130), or fzf exited with error
   printf "\n"
   exit 0
 fi
@@ -359,6 +363,8 @@ for item in "${_ignore_items[@]}"; do
   IFS=$'\t' read -r pkg typ extra <<< "$item"
   if [[ "$typ" == "mas" ]]; then
     _add_to_ignore "$extra"
+  elif [[ "$typ" == "adopt" ]]; then
+    _add_to_ignore "${pkg##* → }"
   else
     _add_to_ignore "$pkg"
   fi
