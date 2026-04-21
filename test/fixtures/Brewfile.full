@@ -1,0 +1,21 @@
+tap 'homebrew/bundle'
+tap 'homebrew/cask-fonts'
+tap 'nikitabobko/tap'
+
+brew 'atuin'
+brew 'bat'
+brew 'git'
+brew 'jq'
+brew 'mas'
+brew 'wget'
+
+cask '1password'
+cask 'firefox'
+cask 'ghostty'
+cask 'google-chrome'
+cask 'slack'
+
+mas 'Keynote', id: 409183694
+mas 'Numbers', id: 409203825
+mas 'Pages', id: 409201541
+mas 'Xcode', id: 497799835
