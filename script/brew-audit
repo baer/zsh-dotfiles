@@ -248,9 +248,112 @@ if [[ $_fzf_rc -eq 130 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 3: Summary + Confirm + Execute (placeholder)
+# Stage 3: Summary + Confirm + Execute
 # ---------------------------------------------------------------------------
 
-printf "  TODO: summary, confirm, execute\n"
+# Read state file into action buckets
+_add_items=()
+_adopt_items=()
+_remove_items=()
+_ignore_items=()
+_skip_items=()
+
+while IFS=$'\t' read -r action pkg typ extra; do
+  case "$action" in
+    add)
+      if [[ "$typ" == "adopt" ]]; then
+        _adopt_items+=("$pkg"$'\t'"$extra")
+      else
+        _add_items+=("$pkg"$'\t'"$typ"$'\t'"$extra")
+      fi
+      ;;
+    remove) _remove_items+=("$pkg"$'\t'"$typ") ;;
+    ignore) _ignore_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
+    skip)   _skip_items+=("$pkg") ;;
+  esac
+done < "$_STATE_FILE"
+
+# Print summary
+printf "\n"
+if [[ ${#_add_items[@]} -gt 0 ]]; then
+  _names=()
+  for item in "${_add_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_GREEN}Add (%d):${_RST}     %s\n" "${#_add_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+fi
+if [[ ${#_adopt_items[@]} -gt 0 ]]; then
+  _names=()
+  for item in "${_adopt_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_GREEN}Adopt (%d):${_RST}   %s\n" "${#_adopt_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+fi
+if [[ ${#_remove_items[@]} -gt 0 ]]; then
+  _names=()
+  for item in "${_remove_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_RED}Remove (%d):${_RST}  %s\n" "${#_remove_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+fi
+if [[ ${#_ignore_items[@]} -gt 0 ]]; then
+  _names=()
+  for item in "${_ignore_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_DIM}Ignore (%d):${_RST}  %s\n" "${#_ignore_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+fi
+if [[ ${#_skip_items[@]} -gt 0 ]]; then
+  printf "  ${_DIM}Skip (%d)${_RST}\n" "${#_skip_items[@]}"
+fi
+printf "\n"
+
+# Check if any actions to execute
+_has_actions=$(( ${#_add_items[@]} + ${#_adopt_items[@]} + ${#_remove_items[@]} + ${#_ignore_items[@]} ))
+
+if [[ $_has_actions -eq 0 ]]; then
+  printf "  ${_DIM}No actions selected${_RST}\n"
+  printf "\n  ${_GREEN}${_BOLD}✓${_RST} ${_DIM}Done${_RST}\n\n"
+  exit 0
+fi
+
+# Confirm
+_confirm="$(prompt_user "Proceed? [Y/n]" "y")"
+if [[ "$_confirm" =~ ^[nN]$ ]]; then
+  printf "\n"
+  exit 0
+fi
+printf "\n"
+
+# Execute: Adds (safe, no confirmation)
+for item in "${_add_items[@]}"; do
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
+  case "$typ" in
+    tap)     _brewfile_insert "tap" "$pkg" ;;
+    formula) _brewfile_insert "brew" "$pkg" ;;
+    cask)    _brewfile_insert "cask" "$pkg" ;;
+    mas)     _brewfile_insert "mas" "$pkg" "$extra" ;;
+  esac
+done
+
+# Execute: Adoptions
+for item in "${_adopt_items[@]}"; do
+  IFS=$'\t' read -r display app_name <<< "$item"
+  # Extract cask name from "AppName.app → cask-name" display format
+  cask_name="${display##* → }"
+  _adopt_cask "$cask_name" "$app_name" || true
+done
+
+# Execute: Removals
+for item in "${_remove_items[@]}"; do
+  IFS=$'\t' read -r pkg typ <<< "$item"
+  case "$typ" in
+    tap)     _remove_tap "$pkg" ;;
+    formula) _remove_formula "$pkg" ;;
+    cask)    _remove_cask "$pkg" ;;
+  esac
+done
+
+# Execute: Ignores
+for item in "${_ignore_items[@]}"; do
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
+  if [[ "$typ" == "mas" ]]; then
+    _add_to_ignore "$extra"
+  else
+    _add_to_ignore "$pkg"
+  fi
+done
 
 printf "\n  ${_GREEN}${_BOLD}✓${_RST} ${_DIM}Done${_RST}\n\n"
