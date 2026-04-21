@@ -15,6 +15,10 @@ BREWFILE="$DOTFILES_ROOT/Brewfile"
 
 # shellcheck source=lib/output.sh
 source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/brewfile.sh
+source "$DOTFILES_ROOT/script/lib/brewfile.sh"
+# shellcheck source=lib/cask-detect.sh
+source "$DOTFILES_ROOT/script/lib/cask-detect.sh"
 
 # Source localrc to pick up HOMEBREW_BUNDLE_CASK_SKIP
 # shellcheck disable=SC1091
@@ -129,9 +133,7 @@ _check_fsmonitor_taps() {
 _check_obsolete_taps() {
   local expected_taps=()
   if [[ -f "$BREWFILE" ]]; then
-    while IFS= read -r _tap_line; do
-      expected_taps+=("$_tap_line")
-    done < <(grep "^tap " "$BREWFILE" | sed "s/tap '\\(.*\\)'/\\1/")
+    mapfile -t expected_taps < <(_brewfile_list_section "tap")
   fi
 
   local untracked=()
@@ -180,16 +182,11 @@ _check_disabled_formulae() {
   fi
 
   local disabled
-  disabled="$(echo "$json" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for f in data.get('formulae', []):
-    if f.get('disabled', False):
-        name = f['name']
-        msg = f.get('disable_reason', 'no reason given')
-        date = f.get('disable_date', 'unknown date')
-        print(f'{name} (disabled {date}: {msg})')
-" 2>/dev/null || true)"
+  disabled="$(echo "$json" | jq -r '
+    .formulae[]? |
+    select(.disabled == true) |
+    "\(.name) (disabled \(.disable_date // "unknown date"): \(.disable_reason // "no reason given"))"
+  ' 2>/dev/null || true)"
 
   if [[ -z "$disabled" ]]; then
     _check_pass "No disabled formulae"
@@ -210,28 +207,8 @@ for f in data.get('formulae', []):
 # ---------------------------------------------------------------------------
 
 _check_orphaned_casks() {
-  local json
-  json="$(brew info --cask --json=v2 --installed 2>/dev/null || true)"
-
-  if [[ -z "$json" ]]; then
-    _check_pass "Cask app artifacts present (could not query)"
-    return 0
-  fi
-
   local orphaned
-  orphaned="$(echo "$json" | python3 -c "
-import json, sys, os
-data = json.load(sys.stdin)
-for c in data.get('casks', []):
-    name = c.get('token', c.get('name', ['unknown'])[0] if isinstance(c.get('name'), list) else 'unknown')
-    for a in c.get('artifacts', []):
-        if isinstance(a, dict) and 'app' in a:
-            for app in a['app']:
-                path = '/Applications/' + app
-                if not os.path.exists(path):
-                    print(f'{name}|{app}')
-                break
-" 2>/dev/null || true)"
+  orphaned="$(_find_orphaned_cask_apps 2>/dev/null || true)"
 
   if [[ -z "$orphaned" ]]; then
     _check_pass "Cask app artifacts present"
