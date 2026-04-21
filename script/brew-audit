@@ -221,10 +221,31 @@ export _STATE_FILE
 export -f _render_triage _update_action
 
 # ---------------------------------------------------------------------------
-# Stage 2: fzf Triage Table (placeholder)
+# Stage 2: fzf Triage Table
 # ---------------------------------------------------------------------------
 
-printf "\n  TODO: fzf triage table with %d items\n\n" "$_total"
+if ! command -v fzf > /dev/null 2>&1; then
+  log_error "fzf is required for interactive review."
+  printf "    Run ${_BOLD}script/bootstrap${_RST} to install it, or: ${_BOLD}brew install fzf${_RST}\n"
+  exit 1
+fi
+
+_fzf_rc=0
+_render_triage | fzf --ansi --no-sort --reverse \
+  --header $'a:add  r:remove  i:ignore  s:skip  enter:confirm  esc:quit' \
+  --header-first \
+  --track --id-nth=2 \
+  --bind "a:execute-silent(_update_action {n} add)+reload(_render_triage)+down" \
+  --bind "r:execute-silent(_update_action {n} remove)+reload(_render_triage)+down" \
+  --bind "i:execute-silent(_update_action {n} ignore)+reload(_render_triage)+down" \
+  --bind "s:execute-silent(_update_action {n} skip)+reload(_render_triage)+down" \
+  > /dev/null || _fzf_rc=$?
+
+if [[ $_fzf_rc -eq 130 ]]; then
+  # User pressed Esc or Ctrl-C
+  printf "\n"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Stage 3: Summary + Confirm + Execute (placeholder)
