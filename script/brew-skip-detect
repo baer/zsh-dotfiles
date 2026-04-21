@@ -10,9 +10,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 DOTFILES_ROOT=$(pwd -P)
+BREWFILE="$DOTFILES_ROOT/Brewfile"
 
 # shellcheck source=lib/output.sh
 source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/brewfile.sh
+source "$DOTFILES_ROOT/script/lib/brewfile.sh"
+# shellcheck source=lib/skip-lists.sh
+source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
+# shellcheck source=lib/cask-detect.sh
+source "$DOTFILES_ROOT/script/lib/cask-detect.sh"
 
 # Source localrc to pick up any existing skip list
 # shellcheck disable=SC1091
@@ -23,9 +30,7 @@ _brew_skip_detect_main() {
 
 # Collect cask tokens from Brewfile
 brewfile_casks=()
-while IFS= read -r cask; do
-  brewfile_casks+=("$cask")
-done < <(grep "^cask '" "$DOTFILES_ROOT/Brewfile" | awk -F"'" '{print $2}')
+mapfile -t brewfile_casks < <(_brewfile_list_section "cask")
 
 if [ ${#brewfile_casks[@]} -eq 0 ]; then
   # Nothing to report — no casks in Brewfile
@@ -52,9 +57,7 @@ fi
 if [ -n "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]; then
   filtered_casks=()
   for cask in "${unmanaged_casks[@]}"; do
-    if ! echo " $HOMEBREW_BUNDLE_CASK_SKIP " | grep -q " $cask "; then
-      filtered_casks+=("$cask")
-    fi
+    _is_cask_skipped "$cask" || filtered_casks+=("$cask")
   done
   if [ ${#filtered_casks[@]} -eq 0 ]; then
     substep_log_info "skipping casks installed outside Homebrew"
@@ -71,78 +74,9 @@ skip_casks=()
 skip_details=()
 
 for cask in "${unmanaged_casks[@]}"; do
-  # Ask brew for this cask's artifact metadata
-  json=$(brew info --cask --json=v2 "$cask" 2>/dev/null || true)
-  [ -z "$json" ] && continue
-
-  found_app=""
-
-  # Strategy 1: Check 'app' artifacts in /Applications
-  while IFS= read -r app; do
-    [ -z "$app" ] && continue
-    if [ -d "/Applications/$app" ]; then
-      found_app="$app"
-      break
-    fi
-  done < <(echo "$json" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for cask in data.get('casks', []):
-    for art in cask.get('artifacts', []):
-        if isinstance(art, dict) and 'app' in art:
-            for a in art['app']:
-                if isinstance(a, str):
-                    print(a)
-" 2>/dev/null)
-
-  # Strategy 2: Check 'uninstall.delete' paths in /Applications
-  if [ -z "$found_app" ]; then
-    while IFS= read -r app_path; do
-      [ -z "$app_path" ] && continue
-      if [ -d "$app_path" ]; then
-        found_app="$(basename "$app_path")"
-        break
-      fi
-    done < <(echo "$json" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for cask in data.get('casks', []):
-    for art in cask.get('artifacts', []):
-        if isinstance(art, dict) and 'uninstall' in art:
-            for u in art['uninstall']:
-                for path in u.get('delete', []):
-                    if path.startswith('/Applications/') and path.endswith('.app'):
-                        print(path)
-" 2>/dev/null)
-  fi
-
-  # Strategy 3: Check pkgutil receipts for pkg-based casks
-  if [ -z "$found_app" ]; then
-    while IFS= read -r pkg_id; do
-      [ -z "$pkg_id" ] && continue
-      if pkgutil --pkg-info "$pkg_id" &>/dev/null; then
-        found_app="(pkg: $pkg_id)"
-        break
-      fi
-    done < <(echo "$json" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for cask in data.get('casks', []):
-    for art in cask.get('artifacts', []):
-        if isinstance(art, dict) and 'uninstall' in art:
-            for u in art['uninstall']:
-                pkg = u.get('pkgutil', '')
-                if isinstance(pkg, str) and pkg:
-                    print(pkg)
-                elif isinstance(pkg, list):
-                    for p in pkg:
-                        print(p)
-" 2>/dev/null)
-  fi
-
-  if [ -n "$found_app" ]; then
+  if _is_cask_preinstalled "$cask"; then
     skip_casks+=("$cask")
-    skip_details+=("$cask ($found_app)")
+    skip_details+=("$cask ($_DETECTED_APP_PATH)")
   fi
 done
 
