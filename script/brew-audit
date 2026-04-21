@@ -252,17 +252,24 @@ for m in "${drift_mas[@]}"; do
   printf 'skip\t%s\tmas\t%s\n' "$_mname" "$_mid" >> "$_STATE_FILE"
 done
 for i in "${!adoptable_casks[@]}"; do
-  printf 'skip\t%s → %s\tadopt\t%s\n' "${adoptable_apps[$i]}" "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" >> "$_STATE_FILE"
+  printf 'skip\t%s -> %s\tadopt\t%s\n' "${adoptable_apps[$i]}" "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" >> "$_STATE_FILE"
 done
 
 # Render the state file as colored lines for fzf
 _render_triage() {
+  # Dynamic column width: measure longest package name
+  local _col_w=0
+  while IFS=$'\t' read -r _ pkg _ _; do
+    (( ${#pkg} > _col_w )) && _col_w=${#pkg}
+  done < "$_STATE_FILE"
+  (( _col_w += 2 ))  # gutter
+
   while IFS=$'\t' read -r action pkg typ extra; do
     case "$action" in
-      add)    printf '\033[32m[add]   \033[0m %-40s %s\n' "$pkg" "$typ" ;;
-      remove) printf '\033[31m[remove]\033[0m %-40s %s\n' "$pkg" "$typ" ;;
-      ignore) printf '\033[90m[ignore]\033[0m %-40s %s\n' "$pkg" "$typ" ;;
-      skip)   printf '\033[90m[skip]  \033[0m %-40s %s\n' "$pkg" "$typ" ;;
+      add)    printf '\033[32m[add]   \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      remove) printf '\033[31m[remove]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      ignore) printf '\033[90m[ignore]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      skip)   printf '\033[90m[skip]  \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
     esac
   done < "$_STATE_FILE"
 }
