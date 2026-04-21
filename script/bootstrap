@@ -12,6 +12,14 @@ LOGFILE="$DOTFILES_ROOT/.bootstrap.log"
 
 # shellcheck source=lib/output.sh
 source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/brewfile.sh
+source "$DOTFILES_ROOT/script/lib/brewfile.sh"
+# shellcheck source=lib/skip-lists.sh
+source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
+# shellcheck source=lib/drift.sh
+source "$DOTFILES_ROOT/script/lib/drift.sh"
+
+BREWFILE="$DOTFILES_ROOT/Brewfile"
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -334,28 +342,10 @@ fi
 phase_end ok "$_sym_detail"
 
 # ---------------------------------------------------------------------------
-# Phase 4: Installing Software
+# Phase 4 helpers
 # ---------------------------------------------------------------------------
 
-_current_phase="Installing Software"
-
-if $SKIP_DEPS; then
-  phase_start "4/5" "Installing Software"
-  phase_end skip "--skip-deps"
-elif ! $IS_MACOS; then
-  phase_start "4/5" "Installing Software"
-  phase_end skip "not macOS"
-else
-  _phase_timer_start "Installing Software"
-
-  if $VERBOSE; then
-    log_phase "4/5" "Installing Software"
-  else
-    phase_start "4/5" "Installing Software"
-    phase_end_deferred
-  fi
-
-  # --- Homebrew ---
+_phase4_ensure_homebrew() {
   if ! command -v brew &>/dev/null; then
     if $VERBOSE; then
       log_info "Installing Homebrew..."
@@ -366,7 +356,6 @@ else
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     fi
 
-    # Ensure brew is on PATH for the rest of this script
     if [[ -x "/opt/homebrew/bin/brew" ]]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
     elif [[ -x "/usr/local/bin/brew" ]]; then
@@ -379,16 +368,9 @@ else
       log_skip "Homebrew already installed"
     fi
   fi
+}
 
-  # --- Cask skip detection ---
-  # Save shell options — brew-skip-detect sets -euo pipefail which must not leak
-  if [[ -f "$DOTFILES_ROOT/script/brew-skip-detect" ]]; then
-    _saved_opts=$(set +o)
-    source "$DOTFILES_ROOT/script/brew-skip-detect"
-    eval "$_saved_opts"
-  fi
-
-  # --- Brew update / upgrade / bundle ---
+_phase4_update_and_bundle() {
   if $VERBOSE; then
     log_info "brew update..."
     brew update 2>&1 | tee -a "$LOGFILE"
@@ -414,9 +396,6 @@ else
     run_with_substep_spinner "brew update" "$LOGFILE" \
       brew update
 
-    # brew upgrade exits nonzero for both benign (nothing to upgrade) and real
-    # failures (disabled formula, missing cask app, permissions). Inspect the
-    # log to distinguish them.
     substep_start "brew upgrade"
     if brew upgrade >> "$LOGFILE" 2>&1; then
       substep_stop ok "brew upgrade"
@@ -434,7 +413,6 @@ else
       brew bundle --file="$DOTFILES_ROOT/Brewfile"
   fi
 
-  # --- Build brew bundle summary from log ---
   _brew_installed=0
   _brew_upgraded=0
   _brew_using=0
@@ -461,144 +439,110 @@ else
   if $VERBOSE; then
     log_success "$_brew_summary"
   fi
+}
 
-  # --- Drift check ---
-  # Count brew-installed packages not in Brewfile (fast, local)
+_phase4_detect_drift() {
   if ! $VERBOSE; then
     substep_start "drift check"
   fi
 
-  _audit_count=0
-  _ignore_file="$HOME/.brew-audit-ignore"
-  _drift_skipped=false
+  local _audit_count
+  _audit_count="$(_count_total_drift 2>/dev/null)" || _audit_count=""
 
-  if _brew_leaves="$(brew leaves 2>&1)"; then
-    while IFS= read -r leaf; do
-      [[ -z "$leaf" ]] && continue
-      [[ -f "$_ignore_file" ]] && grep -qx "$leaf" "$_ignore_file" 2>/dev/null && continue
-      if ! grep -qx "brew '$leaf'" "$DOTFILES_ROOT/Brewfile"; then
-        _audit_count=$((_audit_count + 1))
-
-      fi
-    done <<< "$_brew_leaves"
-  else
-    _drift_skipped=true
-  fi
-
-  if _brew_casks="$(brew list --cask 2>&1)"; then
-    while IFS= read -r cask; do
-      [[ -z "$cask" ]] && continue
-      echo " ${HOMEBREW_BUNDLE_CASK_SKIP:-} " | grep -q " $cask " && continue
-      [[ -f "$_ignore_file" ]] && grep -qx "$cask" "$_ignore_file" 2>/dev/null && continue
-      if ! grep -qx "cask '$cask'" "$DOTFILES_ROOT/Brewfile"; then
-        _audit_count=$((_audit_count + 1))
-
-      fi
-    done <<< "$_brew_casks"
-  else
-    _drift_skipped=true
-  fi
-
-  if command -v mas &>/dev/null; then
-    if _mas_installed="$(mas list 2>&1)"; then
-      while IFS= read -r _mas_line; do
-        [[ -z "$_mas_line" ]] && continue
-        _mas_id="$(echo "$_mas_line" | awk '{print $1}')"
-        [[ -z "$_mas_id" ]] && continue
-        echo " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " | grep -q " $_mas_id " && continue
-        [[ -f "$_ignore_file" ]] && grep -qx "$_mas_id" "$_ignore_file" 2>/dev/null && continue
-        if ! grep -q "id: ${_mas_id}$" "$DOTFILES_ROOT/Brewfile"; then
-          _audit_count=$((_audit_count + 1))
-        fi
-      done <<< "$_mas_installed"
-    fi
-  fi
-
-  # Collect expected taps from Brewfile
-  if ! $_drift_skipped; then
-    _expected_taps=()
-    while IFS= read -r _tap_line; do
-      _expected_taps+=("$_tap_line")
-    done < <(grep "^tap " "$DOTFILES_ROOT/Brewfile" | sed "s/tap '\\(.*\\)'/\\1/")
-
-    if _installed_taps="$(brew tap 2>&1)"; then
-      while IFS= read -r _tap; do
-        [[ -z "$_tap" ]] && continue
-        # Skip implicit taps
-        [[ "$_tap" == "homebrew/core" || "$_tap" == "homebrew/cask" || "$_tap" == "homebrew/bundle" ]] && continue
-        [[ -f "$_ignore_file" ]] && grep -qx "$_tap" "$_ignore_file" 2>/dev/null && continue
-        _is_expected=false
-        for _t in "${_expected_taps[@]:-}"; do
-          [[ "$_t" == "$_tap" ]] && { _is_expected=true; break; }
-        done
-        if ! $_is_expected; then
-          _audit_count=$((_audit_count + 1))
-
-        fi
-      done <<< "$_installed_taps"
-    else
-      _drift_skipped=true
-    fi
-  fi
-
-  if $_drift_skipped; then
+  if [[ -z "$_audit_count" ]]; then
     _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
-  elif [[ $_audit_count -gt 0 ]]; then
-    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}")
-  fi
-
-  if $VERBOSE; then
-    if $_drift_skipped; then
+    if $VERBOSE; then
       log_warn "drift check skipped: brew query failed (Homebrew may be broken)"
-    elif [[ $_audit_count -gt 0 ]]; then
+    else
+      substep_stop warn "drift check (skipped — brew query failed)"
+    fi
+  elif [[ "$_audit_count" -gt 0 ]]; then
+    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}")
+    if $VERBOSE; then
       log_warn "$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}"
+    else
+      substep_stop warn "drift check ($_audit_count untracked)"
     fi
   else
-    if $_drift_skipped; then
-      substep_stop warn "drift check (skipped — brew query failed)"
-    elif [[ $_audit_count -gt 0 ]]; then
-      substep_stop warn "drift check ($_audit_count untracked)"
-    else
+    if ! $VERBOSE; then
       substep_stop ok "drift check"
     fi
   fi
+}
 
-  # --- Vulnerability check ---
-  # Quick scan for known vulns in installed packages (requires brew-vulns)
-  if command -v brew-vulns &>/dev/null; then
-    if ! $VERBOSE; then
-      substep_start "vuln check"
-    fi
+_phase4_check_vulnerabilities() {
+  if ! command -v brew-vulns &>/dev/null; then
+    return 0
+  fi
 
-    _vuln_count=0
-    _vuln_output=""
+  if ! $VERBOSE; then
+    substep_start "vuln check"
+  fi
 
-    if command -v gtimeout &>/dev/null; then
-      _vuln_output="$(gtimeout 15 brew vulns --severity high 2>/dev/null)" || true
-    else
-      _vuln_output="$(brew vulns --severity high 2>/dev/null)" || true
-    fi
+  _vuln_count=0
+  _vuln_output=""
 
-    if [[ -n "$_vuln_output" ]]; then
-      _vuln_count="$(echo "$_vuln_output" | grep -cE '^[a-z].*\(' || true)"
-    fi
+  if command -v gtimeout &>/dev/null; then
+    _vuln_output="$(gtimeout 15 brew vulns --severity high 2>/dev/null)" || true
+  else
+    _vuln_output="$(brew vulns --severity high 2>/dev/null)" || true
+  fi
 
+  if [[ -n "$_vuln_output" ]]; then
+    _vuln_count="$(echo "$_vuln_output" | grep -cE '^[a-z].*\(' || true)"
+  fi
+
+  if [[ $_vuln_count -gt 0 ]]; then
+    _ACTIONABLE_WARNINGS+=("$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}")
+  fi
+
+  if $VERBOSE; then
     if [[ $_vuln_count -gt 0 ]]; then
-      _ACTIONABLE_WARNINGS+=("$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}")
+      log_warn "$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}"
     fi
-
-    if $VERBOSE; then
-      if [[ $_vuln_count -gt 0 ]]; then
-        log_warn "$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}"
-      fi
+  else
+    if [[ $_vuln_count -gt 0 ]]; then
+      substep_stop warn "vuln check ($_vuln_count vulnerable)"
     else
-      if [[ $_vuln_count -gt 0 ]]; then
-        substep_stop warn "vuln check ($_vuln_count vulnerable)"
-      else
-        substep_stop ok "vuln check"
-      fi
+      substep_stop ok "vuln check"
     fi
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Phase 4: Installing Software
+# ---------------------------------------------------------------------------
+
+_current_phase="Installing Software"
+
+if $SKIP_DEPS; then
+  phase_start "4/5" "Installing Software"
+  phase_end skip "--skip-deps"
+elif ! $IS_MACOS; then
+  phase_start "4/5" "Installing Software"
+  phase_end skip "not macOS"
+else
+  _phase_timer_start "Installing Software"
+
+  if $VERBOSE; then
+    log_phase "4/5" "Installing Software"
+  else
+    phase_start "4/5" "Installing Software"
+    phase_end_deferred
+  fi
+
+  _phase4_ensure_homebrew
+
+  # Cask skip detection — save/restore shell options since brew-skip-detect uses set -euo pipefail
+  if [[ -f "$DOTFILES_ROOT/script/brew-skip-detect" ]]; then
+    _saved_opts=$(set +o)
+    source "$DOTFILES_ROOT/script/brew-skip-detect"
+    eval "$_saved_opts"
+  fi
+
+  _phase4_update_and_bundle
+  _phase4_detect_drift
+  _phase4_check_vulnerabilities
 
   if ! $VERBOSE; then
     phase_resolve ok "$_brew_summary"
