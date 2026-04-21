@@ -12,8 +12,16 @@ cd "$(dirname "$0")/.."
 DOTFILES_ROOT=$(pwd -P)
 BREWFILE="$DOTFILES_ROOT/Brewfile"
 
-# shellcheck source=lib/output.sh
-source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/term.sh
+source "$DOTFILES_ROOT/script/lib/term.sh"
+# shellcheck source=lib/log.sh
+source "$DOTFILES_ROOT/script/lib/log.sh"
+# shellcheck source=lib/spinner.sh
+source "$DOTFILES_ROOT/script/lib/spinner.sh"
+# shellcheck source=lib/prompt.sh
+source "$DOTFILES_ROOT/script/lib/prompt.sh"
+# shellcheck source=lib/adopt.sh
+source "$DOTFILES_ROOT/script/lib/adopt.sh"
 # shellcheck source=lib/brewfile.sh
 source "$DOTFILES_ROOT/script/lib/brewfile.sh"
 # shellcheck source=lib/skip-lists.sh
@@ -124,35 +132,23 @@ case "$_skip_response" in
           ;;
         2)
           # Adoption: find the app path and trash it
-          # Extract app name from detail: "cask (App Name.app)" -> "App Name.app"
           local app_name=""
           app_name="$(echo "$detail" | sed 's/.*(\(.*\))/\1/')"
 
-          # Check if running
           if [[ -n "$app_name" ]] && [[ "$app_name" != *"pkg:"* ]]; then
             local app_base="${app_name%.app}"
-            if pgrep -fi "$app_base" > /dev/null 2>&1; then
-              log_warn "$app_base is running. Please quit it before continuing."
-              printf "    Press Enter when ready, or 's' to skip... "
-              local _wait_response
-              read -r _wait_response
-              if [[ "$_wait_response" == "s" ]]; then
+            if _app_is_running "$app_base"; then
+              if ! _prompt_quit_app "$app_base"; then
                 log_info "Skipped $cask"
                 continue
               fi
             fi
 
-            # Trash the manual install
-            local app_path="/Applications/$app_name"
-            if [[ -d "$app_path" ]]; then
-              if mv "$app_path" "$HOME/.Trash/" 2>/dev/null; then
-                log_success "Moved $app_name to Trash"
-              else
-                log_error "Could not move $app_name to Trash (permissions?)"
-                log_info "Skipping adoption of $cask"
-                continue
-              fi
+            if ! _trash_app "/Applications/$app_name"; then
+              log_info "Skipping adoption of $cask"
+              continue
             fi
+            log_success "Moved $app_name to Trash"
           elif [[ "$app_name" == *"pkg:"* ]]; then
             log_warn "Package-based install detected for $cask — cannot auto-trash"
             log_info "Adding to skip list instead"
