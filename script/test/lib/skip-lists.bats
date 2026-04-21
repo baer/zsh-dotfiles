@@ -99,3 +99,25 @@ setup() {
   run _is_audit_ignored "slack"
   [ "$status" -eq 1 ]
 }
+
+# --- _is_audit_ignored_local ---
+
+@test "_is_audit_ignored_local returns 0 when package is in local ignore file" {
+  export AUDIT_IGNORE_LOCAL_FILE="$BATS_TEST_TMPDIR/ignore-local"
+  printf "slack\nzoom\nfirefox\n" > "$AUDIT_IGNORE_LOCAL_FILE"
+  run _is_audit_ignored_local "zoom"
+  [ "$status" -eq 0 ]
+}
+
+@test "_is_audit_ignored_local returns 1 when package is not in local ignore file" {
+  export AUDIT_IGNORE_LOCAL_FILE="$BATS_TEST_TMPDIR/ignore-local"
+  printf "slack\nzoom\n" > "$AUDIT_IGNORE_LOCAL_FILE"
+  run _is_audit_ignored_local "firefox"
+  [ "$status" -eq 1 ]
+}
+
+@test "_is_audit_ignored_local returns 1 when local ignore file does not exist" {
+  export AUDIT_IGNORE_LOCAL_FILE="$BATS_TEST_TMPDIR/nonexistent-local"
+  run _is_audit_ignored_local "slack"
+  [ "$status" -eq 1 ]
+}

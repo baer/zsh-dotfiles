@@ -3,7 +3,8 @@
 # skip-lists.sh — predicates for Homebrew skip lists and audit ignore file
 #
 # Source this file; do not execute it directly.
-# Provides _is_cask_skipped, _is_mas_skipped, _is_audit_ignored.
+# Provides _is_cask_skipped, _is_mas_skipped, _is_audit_ignored,
+#          _is_audit_ignored_local.
 
 # Source guard
 [[ -n "${_SKIP_LISTS_SH_LOADED:-}" ]] && return 0 2>/dev/null || true
@@ -40,5 +41,13 @@ _is_apple_native_mas() {
 _is_audit_ignored() {
   local name="$1"
   local ignore_file="${AUDIT_IGNORE_FILE:-$HOME/.brew-audit-ignore}"
+  [[ -f "$ignore_file" ]] && grep -qx "$name" "$ignore_file" 2>/dev/null
+}
+
+# Check if a package name is in the local (machine-specific) audit ignore file.
+# Returns 0 if ignored, 1 if not (or if the file doesn't exist).
+_is_audit_ignored_local() {
+  local name="$1"
+  local ignore_file="${AUDIT_IGNORE_LOCAL_FILE:-$HOME/.brew-audit-ignore-local}"
   [[ -f "$ignore_file" ]] && grep -qx "$name" "$ignore_file" 2>/dev/null
 }
