@@ -117,6 +117,28 @@ setup() {
   [ "$output" = "999999999 Unknown App" ]
 }
 
+@test "_collect_drift_mas filters Apple-native apps" {
+  mas() { echo "682658836 GarageBand (10.4.11)"; echo "310633997 WhatsApp (26.12.78)"; }
+  export -f mas
+  mdfind() {
+    case "$1" in
+      *682658836*) echo "/Applications/GarageBand.app" ;;
+      *310633997*) echo "/Applications/WhatsApp.app" ;;
+    esac
+  }
+  export -f mdfind
+  mdls() {
+    case "$4" in
+      */GarageBand.app) echo "com.apple.garageband10" ;;
+      */WhatsApp.app)   echo "net.whatsapp.WhatsApp" ;;
+    esac
+  }
+  export -f mdls
+  run _collect_drift_mas
+  [ "$status" -eq 0 ]
+  [ "$output" = "310633997 WhatsApp" ]
+}
+
 @test "_collect_drift_mas filters skipped mas ids" {
   export HOMEBREW_BUNDLE_MAS_SKIP="999999999"
   mas() { echo "999999999 Unknown App (1.0)"; }

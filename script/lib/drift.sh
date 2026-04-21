@@ -83,6 +83,7 @@ _collect_drift_mas() {
     mas_id="$(echo "$line" | awk '{print $1}')"
     mas_name="$(echo "$line" | sed 's/^[0-9]* *//' | sed 's/ *(.*$//')"
     [[ -z "$mas_id" ]] && continue
+    _is_apple_native_mas "$mas_id" && continue
     _is_mas_skipped "$mas_id" && continue
     _is_audit_ignored "$mas_id" && continue
     _brewfile_contains "mas" "$mas_id" || echo "$mas_id $mas_name"

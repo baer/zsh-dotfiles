@@ -51,6 +51,33 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
+# --- _is_apple_native_mas ---
+
+@test "_is_apple_native_mas returns 0 for Apple apps" {
+  mdfind() { echo "/Applications/Keynote.app"; }
+  export -f mdfind
+  mdls() { echo "com.apple.iWork.Keynote"; }
+  export -f mdls
+  run _is_apple_native_mas "409183694"
+  [ "$status" -eq 0 ]
+}
+
+@test "_is_apple_native_mas returns 1 for non-Apple apps" {
+  mdfind() { echo "/Applications/WhatsApp.app"; }
+  export -f mdfind
+  mdls() { echo "net.whatsapp.WhatsApp"; }
+  export -f mdls
+  run _is_apple_native_mas "310633997"
+  [ "$status" -eq 1 ]
+}
+
+@test "_is_apple_native_mas returns 1 when mdfind finds nothing" {
+  mdfind() { echo ""; }
+  export -f mdfind
+  run _is_apple_native_mas "999999999"
+  [ "$status" -eq 1 ]
+}
+
 # --- _is_audit_ignored ---
 
 @test "_is_audit_ignored returns 0 when package is in ignore file" {

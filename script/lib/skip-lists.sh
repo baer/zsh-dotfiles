@@ -23,6 +23,18 @@ _is_mas_skipped() {
   echo " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " | grep -q " $id "
 }
 
+# Check if a mas app is an Apple-native app (bundle ID starts with com.apple.).
+# Uses Spotlight metadata; returns 1 (not Apple) if lookup fails.
+_is_apple_native_mas() {
+  local mas_id="$1"
+  local app_path
+  app_path="$(mdfind "kMDItemAppStoreAdamID == $mas_id" 2>/dev/null | head -1)"
+  [[ -z "$app_path" ]] && return 1
+  local bundle_id
+  bundle_id="$(mdls -name kMDItemCFBundleIdentifier -raw "$app_path" 2>/dev/null)"
+  [[ "$bundle_id" == com.apple.* ]]
+}
+
 # Check if a package name is in the audit ignore file.
 # Returns 0 if ignored, 1 if not (or if the file doesn't exist).
 _is_audit_ignored() {
