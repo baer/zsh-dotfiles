@@ -12,8 +12,16 @@ cd "$(dirname "$0")/.."
 DOTFILES_ROOT=$(pwd -P)
 LOGFILE="$DOTFILES_ROOT/.brew-audit.log"
 
-# shellcheck source=lib/output.sh
-source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/term.sh
+source "$DOTFILES_ROOT/script/lib/term.sh"
+# shellcheck source=lib/log.sh
+source "$DOTFILES_ROOT/script/lib/log.sh"
+# shellcheck source=lib/spinner.sh
+source "$DOTFILES_ROOT/script/lib/spinner.sh"
+# shellcheck source=lib/prompt.sh
+source "$DOTFILES_ROOT/script/lib/prompt.sh"
+# shellcheck source=lib/adopt.sh
+source "$DOTFILES_ROOT/script/lib/adopt.sh"
 # shellcheck source=lib/brewfile.sh
 source "$DOTFILES_ROOT/script/lib/brewfile.sh"
 # shellcheck source=lib/skip-lists.sh
@@ -85,86 +93,6 @@ _add_to_ignore() {
   fi
   echo "$pkg" >> "$IGNORE_FILE"
   log_success "Added $pkg to ignore list"
-}
-
-# Remove a cask from HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc
-_remove_from_skip_list() {
-  local cask="$1"
-  local localrc="$HOME/.localrc"
-
-  [[ -z "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]] && return 0
-
-  # Remove the cask from the space-separated list
-  local new_skip
-  new_skip="$(echo "$HOMEBREW_BUNDLE_CASK_SKIP" | tr ' ' '\n' | grep -vx "$cask" | tr '\n' ' ' | sed 's/ $//')"
-
-  if [[ -f "$localrc" ]] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
-    if [[ -z "$new_skip" ]]; then
-      # Remove the line entirely
-      sed -i '' '/^export HOMEBREW_BUNDLE_CASK_SKIP=/d' "$localrc"
-    else
-      sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|export HOMEBREW_BUNDLE_CASK_SKIP=\"$new_skip\"|" "$localrc"
-    fi
-  fi
-
-  export HOMEBREW_BUNDLE_CASK_SKIP="$new_skip"
-}
-
-# Adopt a manually installed app into brew management.
-# Trashes the manual copy, runs brew install, updates Brewfile and skip list.
-# Args: cask_name app_name
-_adopt_cask() {
-  local cask="$1" app_name="$2"
-  local app_path="/Applications/$app_name"
-
-  # Check if running
-  local app_base="${app_name%.app}"
-  if pgrep -fi "$app_base" > /dev/null 2>&1; then
-    log_warn "$app_base is running. Please quit it before continuing."
-    printf "    Press Enter when ready, or 's' to skip... "
-    local _wait_response
-    read -r _wait_response
-    if [[ "$_wait_response" == "s" ]]; then
-      log_info "Skipped $cask"
-      return 1
-    fi
-    # Re-check
-    if pgrep -fi "$app_base" > /dev/null 2>&1; then
-      log_error "$app_base is still running — skipping"
-      return 1
-    fi
-  fi
-
-  # Trash the manual install
-  if [[ -d "$app_path" ]]; then
-    spinner_start "Moving $app_name to Trash"
-    if mv "$app_path" "$HOME/.Trash/" 2>/dev/null; then
-      spinner_stop ok "Moved $app_name to Trash"
-    else
-      spinner_stop fail "Could not move $app_name to Trash (permissions?)"
-      log_info "Skipping adoption of $cask"
-      return 1
-    fi
-  fi
-
-  # Install via brew
-  spinner_start "brew install --cask $cask"
-  if brew install --cask "$cask" >> "$LOGFILE" 2>&1; then
-    spinner_stop ok "brew install --cask $cask"
-  else
-    spinner_stop fail "brew install --cask $cask (see .brew-audit.log)"
-    return 1
-  fi
-
-  # Update Brewfile if not already listed
-  if ! grep -qx "cask '$cask'" "$BREWFILE"; then
-    _brewfile_insert "cask" "$cask"
-  fi
-
-  # Remove from skip list if present
-  _remove_from_skip_list "$cask"
-
-  return 0
 }
 
 # ---------------------------------------------------------------------------
