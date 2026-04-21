@@ -53,6 +53,25 @@ setup() {
   [ -z "$output" ]
 }
 
+@test "_collect_drift_formulae filters locally-ignored packages" {
+  export AUDIT_IGNORE_LOCAL_FILE="$BATS_TEST_TMPDIR/ignore-local"
+  echo "unknown-formula" > "$AUDIT_IGNORE_LOCAL_FILE"
+
+  brew() {
+    case "$1" in
+      leaves) printf "unknown-formula\nknown-formula\n" ;;
+    esac
+  }
+  export -f brew
+
+  copy_fixture "Brewfile.basic"
+
+  run _collect_drift_formulae
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"known-formula"* ]]
+  [[ "$output" != *"unknown-formula"* ]]
+}
+
 # --- _collect_drift_casks ---
 
 @test "_collect_drift_casks returns untracked casks" {

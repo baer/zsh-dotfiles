@@ -33,6 +33,7 @@ _collect_drift_taps() {
     # Skip implicit taps
     [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" || "$tap" == "homebrew/bundle" ]] && continue
     _is_audit_ignored "$tap" && continue
+    _is_audit_ignored_local "$tap" && continue
     local is_expected=false
     for t in "${expected_taps[@]:-}"; do
       [[ "$t" == "$tap" ]] && { is_expected=true; break; }
@@ -50,6 +51,7 @@ _collect_drift_formulae() {
   while IFS= read -r leaf; do
     [[ -z "$leaf" ]] && continue
     _is_audit_ignored "$leaf" && continue
+    _is_audit_ignored_local "$leaf" && continue
     _brewfile_contains "brew" "$leaf" || echo "$leaf"
   done <<< "$leaves"
 }
@@ -65,6 +67,7 @@ _collect_drift_casks() {
     [[ -z "$cask" ]] && continue
     _is_cask_skipped "$cask" && continue
     _is_audit_ignored "$cask" && continue
+    _is_audit_ignored_local "$cask" && continue
     _brewfile_contains "cask" "$cask" || echo "$cask"
   done <<< "$casks"
 }
@@ -86,6 +89,7 @@ _collect_drift_mas() {
     _is_apple_native_mas "$mas_id" && continue
     _is_mas_skipped "$mas_id" && continue
     _is_audit_ignored "$mas_id" && continue
+    _is_audit_ignored_local "$mas_id" && continue
     _brewfile_contains "mas" "$mas_id" || echo "$mas_id $mas_name"
   done <<< "$mas_list"
 }
