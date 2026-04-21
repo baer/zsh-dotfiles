@@ -13,8 +13,8 @@ cd "$(dirname "$0")/.."
 DOTFILES_ROOT=$(pwd -P)
 BREWFILE="$DOTFILES_ROOT/Brewfile"
 
-# shellcheck source=lib/output.sh
-source "$DOTFILES_ROOT/script/lib/output.sh"
+# shellcheck source=lib/term.sh
+source "$DOTFILES_ROOT/script/lib/term.sh"
 # shellcheck source=lib/brewfile.sh
 source "$DOTFILES_ROOT/script/lib/brewfile.sh"
 # shellcheck source=lib/cask-detect.sh
@@ -339,21 +339,28 @@ _check_vulnerable_formulae() {
 # Run all checks
 # ---------------------------------------------------------------------------
 
+_HEALTH_CHECKS=(
+  _check_brew_reachable
+  _check_update_lock
+  _check_fsmonitor_taps
+  _check_obsolete_taps
+  _check_disabled_formulae
+  _check_orphaned_casks
+  _check_bundle_satisfaction
+  _check_vulnerable_formulae
+)
+
 printf "\n  ${_BOLD}brew-health${_RST}\n\n"
 
-# Check 1 is a gate — if Homebrew isn't reachable, skip everything else
-if ! _check_brew_reachable; then
-  printf "\n  ${_RED}${_BOLD}1 issue found${_RST} (Homebrew not reachable — remaining checks skipped)\n\n"
-  exit 1
-fi
-
-_check_update_lock || true
-_check_fsmonitor_taps || true
-_check_obsolete_taps || true
-_check_disabled_formulae || true
-_check_orphaned_casks || true
-_check_bundle_satisfaction || true
-_check_vulnerable_formulae || true
+for _check in "${_HEALTH_CHECKS[@]}"; do
+  if ! "$_check"; then
+    # First check is a gate — if Homebrew isn't reachable, bail
+    if [[ "$_check" == "${_HEALTH_CHECKS[0]}" ]]; then
+      printf "\n  ${_RED}${_BOLD}1 issue found${_RST} (Homebrew not reachable — remaining checks skipped)\n\n"
+      exit 1
+    fi
+  fi
+done
 
 if [[ $_failures -eq 0 ]]; then
   printf "\n  ${_GREEN}${_BOLD}All checks passed${_RST}\n\n"
