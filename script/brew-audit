@@ -4,7 +4,8 @@
 #
 # Detects Brewfile drift (packages installed via brew but not listed in
 # the Brewfile) and manually installed apps that could be adopted into
-# Homebrew management.
+# Homebrew management. Presents a single fzf triage table for
+# interactive review.
 
 set -euo pipefail
 
@@ -55,7 +56,6 @@ _remove_tap() {
 
 _remove_formula() {
   local formula="$1"
-  # Check for dependents before removing
   local dependents
   dependents="$(brew uses --installed "$formula" 2>/dev/null || true)"
   if [[ -n "$dependents" ]]; then
@@ -103,125 +103,64 @@ _on_exit() { _spinner_cleanup; }
 trap '_on_exit' EXIT
 
 # ---------------------------------------------------------------------------
-# Phase 1: Brew Drift
+# Stage 1: Collection
 # ---------------------------------------------------------------------------
 
 : > "$LOGFILE"
 
 printf "\n  ${_BOLD}brew-audit${_RST}\n\n"
 
+# Drift collection
 mapfile -t drift_taps < <(_collect_drift_taps)
-
-# Display tap drift
-if [[ ${#drift_taps[@]} -gt 0 ]]; then
-  printf "  Taps not in Brewfile (%d):\n" "${#drift_taps[@]}"
-  for t in "${drift_taps[@]}"; do
-    printf "    %s %s\n" "$_INFO" "$t"
-  done
-  printf "\n"
-fi
-
 mapfile -t drift_formulae < <(_collect_drift_formulae)
-
 mapfile -t drift_casks < <(_collect_drift_casks)
 
 drift_mas=()
 if command -v mas &>/dev/null; then
   while IFS= read -r _drift_line; do
     [[ -z "$_drift_line" ]] && continue
-    local _mas_id="${_drift_line%% *}"
-    local _mas_name="${_drift_line#* }"
+    _mas_id="${_drift_line%% *}"
+    _mas_name="${_drift_line#* }"
     drift_mas+=("${_mas_id}:${_mas_name}")
   done < <(_collect_drift_mas)
 fi
 
-# Display drift results
-_drift_total=$(( ${#drift_taps[@]} + ${#drift_formulae[@]} + ${#drift_casks[@]} + ${#drift_mas[@]} ))
+_drift_count=$(( ${#drift_taps[@]} + ${#drift_formulae[@]} + ${#drift_casks[@]} + ${#drift_mas[@]} ))
 
-if [[ ${#drift_formulae[@]} -gt 0 ]]; then
-  printf "  Formulae not in Brewfile (%d):\n" "${#drift_formulae[@]}"
-  for f in "${drift_formulae[@]}"; do
-    printf "    %s %s\n" "$_INFO" "$f"
-  done
-  printf "\n"
+if [[ $_drift_count -gt 0 ]]; then
+  log_info "Collected drift: ${#drift_formulae[@]} formulae, ${#drift_casks[@]} casks, ${#drift_taps[@]} taps, ${#drift_mas[@]} mas"
 fi
 
-if [[ ${#drift_casks[@]} -gt 0 ]]; then
-  printf "  Casks not in Brewfile (%d):\n" "${#drift_casks[@]}"
-  for c in "${drift_casks[@]}"; do
-    printf "    %s %s\n" "$_INFO" "$c"
-  done
-  printf "\n"
-fi
-
-if [[ ${#drift_mas[@]} -gt 0 ]]; then
-  printf "  Mac App Store apps not in Brewfile (%d):\n" "${#drift_mas[@]}"
-  for m in "${drift_mas[@]}"; do
-    _mid="${m%%:*}"
-    _mname="${m#*:}"
-    printf "    %s %s (id: %s)\n" "$_INFO" "$_mname" "$_mid"
-  done
-  printf "\n"
-fi
-
-# ---------------------------------------------------------------------------
-# Phase 2: Adoptable Apps (opt-in)
-# ---------------------------------------------------------------------------
-
+# Adoption scan (automatic, no prompt)
 adoptable_casks=()
 adoptable_apps=()
 
-if [[ "${INTERACTIVE:-true}" == true ]]; then
-  _scan_response="$(prompt_user "Scan /Applications for adoptable apps? This takes a moment. [y/N]" "n")"
-  printf "\n"
-else
-  _scan_response="n"
-fi
+if [[ "$INTERACTIVE" == true ]]; then
+  spinner_start "Scanning /Applications for adoptable apps"
 
-if [[ "$_scan_response" =~ ^[yY]$ ]]; then
-  spinner_start "Scanning /Applications"
-
-  # Get brew-managed casks for exclusion
   _brew_casks="$(brew list --cask 2>/dev/null || true)"
 
   while IFS= read -r app_dir; do
     app_name="$(basename "$app_dir")"
     [[ "$app_name" != *.app ]] && continue
 
-    # Derive candidate cask name
     candidate="$(echo "${app_name%.app}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')"
-
     [[ -z "$candidate" ]] && continue
 
-    # Skip if already brew-managed
     echo "$_brew_casks" | grep -qx "$candidate" && continue
-
-    # Skip if ignored
     _is_audit_ignored "$candidate" && continue
 
-    # Check if a brew cask exists for this candidate
     if brew info --cask "$candidate" > /dev/null 2>&1; then
       adoptable_casks+=("$candidate")
       adoptable_apps+=("$app_name")
     fi
   done < <(find /Applications -maxdepth 1 -name "*.app" -type d 2>/dev/null)
 
-  spinner_stop ok "Scanned /Applications"
-
-  if [[ ${#adoptable_casks[@]} -gt 0 ]]; then
-    printf "\n  Manually installed apps with a brew cask available (%d):\n" "${#adoptable_casks[@]}"
-    for i in "${!adoptable_casks[@]}"; do
-      printf "    %s %s → cask '%s'\n" "$_INFO" "${adoptable_apps[$i]}" "${adoptable_casks[$i]}"
-    done
-    printf "\n"
-  fi
+  spinner_stop ok "Scanned /Applications (${#adoptable_casks[@]} adoptable)"
 fi
 
-# ---------------------------------------------------------------------------
-# Phase 3: Interactive Review
-# ---------------------------------------------------------------------------
-
-_total=$(( _drift_total + ${#adoptable_casks[@]} ))
+# Total items
+_total=$(( _drift_count + ${#adoptable_casks[@]} ))
 
 if [[ $_total -eq 0 ]]; then
   log_success "Brewfile is in sync — nothing to do"
@@ -229,108 +168,21 @@ if [[ $_total -eq 0 ]]; then
   exit 0
 fi
 
-if [[ "${INTERACTIVE:-true}" != true ]]; then
+if [[ "$INTERACTIVE" != true ]]; then
   log_info "$_total packages not in Brewfile (run interactively to resolve)"
   exit 0
 fi
 
-printf "  ${_BOLD}%d${_RST} formulae/casks not in Brewfile" "$_drift_total"
-if [[ ${#adoptable_casks[@]} -gt 0 ]]; then
-  printf ", ${_BOLD}%d${_RST} adoptable apps" "${#adoptable_casks[@]}"
-fi
-printf "\n"
+# ---------------------------------------------------------------------------
+# Stage 2: fzf Triage Table (placeholder)
+# ---------------------------------------------------------------------------
 
-printf "  ${_DIM}On a work machine? Some of these may have been installed by your\n"
-printf "  company (MDM, IT tooling, etc.) and don't belong in your personal\n"
-printf "  Brewfile. Use \"Review one by one\" and ignore those.${_RST}\n"
-printf "\n"
+printf "\n  TODO: fzf triage table with %d items\n\n" "$_total"
 
-_review_response="$(prompt_choice "Action" "Add all to Brewfile" "Review one by one" "Dismiss all (ignore)" "Quit")"
-printf "\n"
+# ---------------------------------------------------------------------------
+# Stage 3: Summary + Confirm + Execute (placeholder)
+# ---------------------------------------------------------------------------
 
-case "$_review_response" in
-  4)
-    exit 0
-    ;;
-  3)
-    # Dismiss all
-    for t in "${drift_taps[@]}"; do _add_to_ignore "$t"; done
-    for f in "${drift_formulae[@]}"; do _add_to_ignore "$f"; done
-    for c in "${drift_casks[@]}"; do _add_to_ignore "$c"; done
-    for c in "${adoptable_casks[@]}"; do _add_to_ignore "$c"; done
-    for m in "${drift_mas[@]}"; do _add_to_ignore "${m%%:*}"; done
-    ;;
-  1)
-    # Add all drift items to Brewfile
-    for t in "${drift_taps[@]}"; do _brewfile_insert "tap" "$t"; done
-    for f in "${drift_formulae[@]}"; do _brewfile_insert "brew" "$f"; done
-    for c in "${drift_casks[@]}"; do _brewfile_insert "cask" "$c"; done
-    for m in "${drift_mas[@]}"; do
-      _brewfile_insert "mas" "${m#*:}" "${m%%:*}"
-    done
-    # Adopt all adoptable apps
-    for i in "${!adoptable_casks[@]}"; do
-      _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true
-    done
-    ;;
-  2)
-    # Review one by one
-
-    # Shared review for taps/formulae/casks: Add | Remove | Ignore | Skip
-    _review_drift_item() {
-      local type="$1" name="$2" display="$3" remove_label="$4" remove_fn="$5"
-      printf "  %s\n" "$display"
-      local resp
-      resp="$(prompt_choice "Action" "Add to Brewfile" "$remove_label" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$resp" in
-        1) _brewfile_insert "$type" "$name" ;;
-        2) "$remove_fn" "$name" ;;
-        3) _add_to_ignore "$name" ;;
-        4) ;;
-      esac
-    }
-
-    for t in "${drift_taps[@]}"; do
-      _review_drift_item "tap" "$t" "$t (tap)" "Remove (untap)" _remove_tap
-    done
-    for f in "${drift_formulae[@]}"; do
-      _review_drift_item "brew" "$f" "$f" "Remove (uninstall)" _remove_formula
-    done
-    for c in "${drift_casks[@]}"; do
-      _review_drift_item "cask" "$c" "$c" "Remove (uninstall)" _remove_cask
-    done
-
-    # Drift mas apps
-    for m in "${drift_mas[@]}"; do
-      _mid="${m%%:*}"
-      _mname="${m#*:}"
-      printf "  %s (mas, id: %s)\n" "$_mname" "$_mid"
-      _item_response="$(prompt_choice "Action" "Add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$_item_response" in
-        1) _brewfile_insert "mas" "$_mname" "$_mid" ;;
-        2) _add_to_ignore "$_mid" ;;
-        3) ;;
-      esac
-    done
-
-    # Adoptable apps
-    for i in "${!adoptable_casks[@]}"; do
-      printf "  %s → cask '%s'\n" "${adoptable_apps[$i]}" "${adoptable_casks[$i]}"
-      _item_response="$(prompt_choice "Action" "Remove manual copy and install via brew" "Just add to Brewfile" "Ignore (permanent)" "Skip (for now)")"
-      printf "\n"
-      case "$_item_response" in
-        1) _adopt_cask "${adoptable_casks[$i]}" "${adoptable_apps[$i]}" || true ;;
-        2)
-          _brewfile_insert "cask" "${adoptable_casks[$i]}"
-          log_warn "Manual copy still in /Applications — next brew bundle may skip or conflict"
-          ;;
-        3) _add_to_ignore "${adoptable_casks[$i]}" ;;
-        4) ;;
-      esac
-    done
-    ;;
-esac
+printf "  TODO: summary, confirm, execute\n"
 
 printf "\n  ${_GREEN}${_BOLD}✓${_RST} ${_DIM}Done${_RST}\n\n"
