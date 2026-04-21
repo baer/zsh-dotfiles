@@ -214,6 +214,14 @@ _render_triage() {
 _update_action() {
   local line_num="$1" new_action="$2"
   local sed_line=$(( line_num + 1 ))
+  # Block 'remove' for mas items
+  if [[ "$new_action" == "remove" ]]; then
+    local item_type
+    item_type="$(awk -v ln="$sed_line" 'BEGIN{FS="\t"} NR==ln{print $3}' "$_STATE_FILE")"
+    if [[ "$item_type" == "mas" ]]; then
+      return 0
+    fi
+  fi
   awk -v ln="$sed_line" -v act="$new_action" 'BEGIN{FS=OFS="\t"} NR==ln{$1=act} 1' "$_STATE_FILE" > "$_STATE_FILE.tmp" && mv "$_STATE_FILE.tmp" "$_STATE_FILE"
 }
 
