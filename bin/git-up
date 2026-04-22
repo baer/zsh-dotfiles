@@ -97,22 +97,39 @@ else
   old_head=$(git rev-parse HEAD)
   git pull --prune
   new_head=$(git rev-parse HEAD)
+fi
+
+pulled_new=$([ "$old_head" != "$new_head" ] && echo true || echo false)
+
+# -- pre hook (if --pre) ---------------------------------------------
+
+if [ -n "$pre_cmd" ]; then
+  if $pulled_new; then
+    echo "Running --pre: $pre_cmd"
+    eval "$pre_cmd" || warn "--pre command failed"
+  else
+    warn "--pre skipped (no new commits)"
+  fi
+fi
+
+# -- changelog -------------------------------------------------------
+
+if $pulled_new; then
+  echo "Log:"
+  git log --color --pretty=oneline --abbrev-commit "$old_head".."$new_head" \
+    | sed 's/^/  /'
+fi
+
+# -- return to branch ------------------------------------------------
+
+if [ "$current_branch" != "$default_branch" ]; then
   git checkout "$current_branch" || {
     warn "could not return to '$current_branch' — staying on $default_branch"
-    # best-effort stash restore before bailing
     if $did_stash; then
       warn "your stash is preserved — run 'git stash pop' when ready"
     fi
     exit 1
   }
-fi
-
-# -- changelog -------------------------------------------------------
-
-if [ "$old_head" != "$new_head" ]; then
-  echo "Log:"
-  git log --color --pretty=oneline --abbrev-commit "$old_head".."$new_head" \
-    | sed 's/^/  /'
 fi
 
 # -- rebase (if -r) --------------------------------------------------
@@ -129,11 +146,11 @@ if $rebase && [ "$current_branch" != "$default_branch" ]; then
   fi
 fi
 
-# -- post-install (if -i) -----------------------------------------------
+# -- post hook (if --post) -------------------------------------------
 
-if [ -n "$post_install" ] && [ "$old_head" != "$new_head" ]; then
-  echo "Running post-install: $post_install"
-  eval "$post_install" || warn "post-install command failed"
+if [ -n "$post_cmd" ] && $pulled_new; then
+  echo "Running --post: $post_cmd"
+  eval "$post_cmd" || warn "--post command failed"
 fi
 
 # -- restore stash ----------------------------------------------------
