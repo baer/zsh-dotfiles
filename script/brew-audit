@@ -38,6 +38,8 @@ source "$DOTFILES_ROOT/script/lib/cask-detect.sh"
 
 IGNORE_FILE="$HOME/.brew-audit-ignore"
 export AUDIT_IGNORE_FILE="$IGNORE_FILE"
+IGNORE_LOCAL_FILE="$HOME/.brew-audit-ignore-local"
+export AUDIT_IGNORE_LOCAL_FILE="$IGNORE_LOCAL_FILE"
 BREWFILE="$DOTFILES_ROOT/Brewfile"
 
 # ---------------------------------------------------------------------------
@@ -152,6 +154,15 @@ _add_to_ignore() {
   log_success "Added $pkg to ignore list"
 }
 
+_add_to_ignore_local() {
+  local pkg="$1"
+  if [[ ! -f "$IGNORE_LOCAL_FILE" ]]; then
+    printf "# brew-audit-ignore-local\n#\n# Machine-specific ignore list for brew-audit drift detection.\n# Packages here are ignored only on this machine.\n# This file is NOT committed to the dotfiles repo.\n" > "$IGNORE_LOCAL_FILE"
+  fi
+  echo "$pkg" >> "$IGNORE_LOCAL_FILE"
+  log_success "Added $pkg to local ignore list"
+}
+
 # ---------------------------------------------------------------------------
 # Traps
 # ---------------------------------------------------------------------------
@@ -206,6 +217,7 @@ if [[ "$INTERACTIVE" == true ]]; then
 
     echo "$_brew_casks" | grep -qx "$candidate" && continue
     _is_audit_ignored "$candidate" && continue
+    _is_audit_ignored_local "$candidate" && continue
 
     if brew info --cask "$candidate" > /dev/null 2>&1; then
       adoptable_casks+=("$candidate")
@@ -266,16 +278,17 @@ _render_triage() {
 
   while IFS=$'\t' read -r action pkg typ extra; do
     case "$action" in
-      add)    printf '\033[32m[add]   \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
-      remove) printf '\033[31m[remove]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
-      ignore) printf '\033[90m[ignore]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
-      skip)   printf '\033[90m[skip]  \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      add)         printf '\033[32m[add]        \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      remove)      printf '\033[31m[remove]     \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      skip-local)  printf '\033[33m[skip-local] \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      skip-always) printf '\033[90m[skip-always]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      skip)        printf '\033[90m[skip]       \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
     esac
   done < "$_STATE_FILE"
 }
 
 # Cycle action forward or backward for a given line (0-based from fzf {n})
-# Order: skip → add → remove → ignore → skip
+# Order: skip → add → remove → skip-local → skip-always → skip
 # Skips 'remove' for mas items automatically.
 _cycle_action() {
   local line_num="$1" direction="$2"
@@ -287,24 +300,26 @@ _cycle_action() {
   local new_action
   if [[ "$direction" == "forward" ]]; then
     case "$current" in
-      skip)   new_action="add" ;;
-      add)    new_action="remove" ;;
-      remove) new_action="ignore" ;;
-      ignore) new_action="skip" ;;
+      skip)        new_action="add" ;;
+      add)         new_action="remove" ;;
+      remove)      new_action="skip-local" ;;
+      skip-local)  new_action="skip-always" ;;
+      skip-always) new_action="skip" ;;
     esac
   else
     case "$current" in
-      skip)   new_action="ignore" ;;
-      ignore) new_action="remove" ;;
-      remove) new_action="add" ;;
-      add)    new_action="skip" ;;
+      skip)        new_action="skip-always" ;;
+      skip-always) new_action="skip-local" ;;
+      skip-local)  new_action="remove" ;;
+      remove)      new_action="add" ;;
+      add)         new_action="skip" ;;
     esac
   fi
 
   # Skip 'remove' for mas items
   if [[ "$new_action" == "remove" && "$item_type" == "mas" ]]; then
     if [[ "$direction" == "forward" ]]; then
-      new_action="ignore"
+      new_action="skip-local"
     else
       new_action="add"
     fi
@@ -314,7 +329,8 @@ _cycle_action() {
 }
 
 export _STATE_FILE
-export -f _render_triage _cycle_action
+export IGNORE_LOCAL_FILE
+export -f _render_triage _cycle_action _add_to_ignore_local
 
 # fzf uses $SHELL for execute-silent and reload subshells;
 # exported functions require bash.
@@ -355,7 +371,8 @@ fi
 _add_items=()
 _adopt_items=()
 _remove_items=()
-_ignore_items=()
+_skip_local_items=()
+_skip_always_items=()
 _skip_items=()
 
 while IFS=$'\t' read -r action pkg typ extra; do
@@ -367,9 +384,10 @@ while IFS=$'\t' read -r action pkg typ extra; do
         _add_items+=("$pkg"$'\t'"$typ"$'\t'"$extra")
       fi
       ;;
-    remove) _remove_items+=("$pkg"$'\t'"$typ") ;;
-    ignore) _ignore_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
-    skip)   _skip_items+=("$pkg") ;;
+    remove)      _remove_items+=("$pkg"$'\t'"$typ") ;;
+    skip-local)  _skip_local_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
+    skip-always) _skip_always_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
+    skip)        _skip_items+=("$pkg") ;;
   esac
 done < "$_STATE_FILE"
 
@@ -378,22 +396,27 @@ printf "\n"
 if [[ ${#_add_items[@]} -gt 0 ]]; then
   _names=()
   for item in "${_add_items[@]}"; do _names+=("${item%%$'\t'*}"); done
-  printf "  ${_GREEN}Add (%d):${_RST}     %s\n" "${#_add_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+  printf "  ${_GREEN}Add (%d):${_RST}          %s\n" "${#_add_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
 fi
 if [[ ${#_adopt_items[@]} -gt 0 ]]; then
   _names=()
   for item in "${_adopt_items[@]}"; do _names+=("${item%%$'\t'*}"); done
-  printf "  ${_GREEN}Adopt (%d):${_RST}   %s\n" "${#_adopt_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+  printf "  ${_GREEN}Adopt (%d):${_RST}        %s\n" "${#_adopt_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
 fi
 if [[ ${#_remove_items[@]} -gt 0 ]]; then
   _names=()
   for item in "${_remove_items[@]}"; do _names+=("${item%%$'\t'*}"); done
-  printf "  ${_RED}Remove (%d):${_RST}  %s\n" "${#_remove_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+  printf "  ${_RED}Remove (%d):${_RST}       %s\n" "${#_remove_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
 fi
-if [[ ${#_ignore_items[@]} -gt 0 ]]; then
+if [[ ${#_skip_local_items[@]} -gt 0 ]]; then
   _names=()
-  for item in "${_ignore_items[@]}"; do _names+=("${item%%$'\t'*}"); done
-  printf "  ${_DIM}Ignore (%d):${_RST}  %s\n" "${#_ignore_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+  for item in "${_skip_local_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_DIM}Skip-local (%d):${_RST}   %s\n" "${#_skip_local_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+fi
+if [[ ${#_skip_always_items[@]} -gt 0 ]]; then
+  _names=()
+  for item in "${_skip_always_items[@]}"; do _names+=("${item%%$'\t'*}"); done
+  printf "  ${_DIM}Skip-always (%d):${_RST}  %s\n" "${#_skip_always_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
 fi
 if [[ ${#_skip_items[@]} -gt 0 ]]; then
   printf "  ${_DIM}Skip (%d)${_RST}\n" "${#_skip_items[@]}"
@@ -401,7 +424,7 @@ fi
 printf "\n"
 
 # Check if any actions to execute
-_has_actions=$(( ${#_add_items[@]} + ${#_adopt_items[@]} + ${#_remove_items[@]} + ${#_ignore_items[@]} ))
+_has_actions=$(( ${#_add_items[@]} + ${#_adopt_items[@]} + ${#_remove_items[@]} + ${#_skip_local_items[@]} + ${#_skip_always_items[@]} ))
 
 if [[ $_has_actions -eq 0 ]]; then
   printf "  ${_DIM}No actions selected${_RST}\n"
@@ -450,8 +473,20 @@ for item in "${_remove_items[@]}"; do
   [[ "$typ" == "tap" ]] && _remove_tap "$pkg"
 done
 
-# Execute: Ignores
-for item in "${_ignore_items[@]}"; do
+# Execute: Skip-local (machine-specific ignore)
+for item in "${_skip_local_items[@]}"; do
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
+  if [[ "$typ" == "mas" ]]; then
+    _add_to_ignore_local "$extra"
+  elif [[ "$typ" == "adopt" ]]; then
+    _add_to_ignore_local "${pkg##* -> }"
+  else
+    _add_to_ignore_local "$pkg"
+  fi
+done
+
+# Execute: Skip-always (all machines ignore)
+for item in "${_skip_always_items[@]}"; do
   IFS=$'\t' read -r pkg typ extra <<< "$item"
   if [[ "$typ" == "mas" ]]; then
     _add_to_ignore "$extra"
