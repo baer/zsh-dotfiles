@@ -1,25 +1,12 @@
 #!/bin/sh
 #
-# Usage: git up [-r] [--pre CMD] [--post CMD]
+# Usage: git up [-r|-ri] [--before CMD] [--after CMD]
 #
 # Updates the default branch (main/master) from origin, then
 # returns to the branch you were on.  Dirty working trees are
 # auto-stashed and restored afterward.
 #
-# Options:
-#   -r           Rebase the current branch onto the default branch
-#                (interactive).
-#   --pre CMD    Run CMD on the default branch after a successful
-#   -b CMD       pull. Skipped if no new commits were pulled.
-#   --post CMD   Run CMD on the current branch after the update
-#   -a CMD       completes. Skipped if no new commits were pulled.
-#
 # Changelog of pulled commits is printed after the update.
-#
-# Examples:
-#   git up -r
-#   git up --pre "make build" --post "yarn install"
-#   git up -r -b "make" -a "yarn"
 
 set -e
 
@@ -27,6 +14,36 @@ set -e
 
 die()  { printf 'git-up: %s\n' "$1" >&2; exit 1; }
 warn() { printf 'git-up: %s\n' "$1" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: git up [-r|-ri] [--before CMD] [--after CMD]
+
+Updates the default branch (main/master) from origin, then
+returns to the branch you were on.  Dirty working trees are
+auto-stashed and restored afterward.
+
+Options:
+  -r              Rebase the current branch onto the default branch.
+  -ri             Rebase interactively (opens editor for rebase plan).
+  --before CMD    Run CMD on the default branch after pulling.
+  -b CMD          Skipped if no new commits were pulled.
+  --after CMD     Run CMD on the current branch after the update.
+  -a CMD          Skipped if no new commits were pulled.
+  -h, --help      Show this message.
+
+Hook commands are passed to eval — use only with trusted input.
+
+Changelog of pulled commits is printed after the update.
+
+Examples:
+  git up -r
+  git up -ri
+  git up --before "make build" --after "yarn install"
+  git up -r -b "make" -a "yarn"
+EOF
+  exit 0
+}
 
 # Detect the default branch: remote HEAD first, then local fallback.
 detect_default_branch() {
@@ -53,16 +70,19 @@ has_inflight_operation() {
 # -- parse flags -----------------------------------------------------
 
 rebase=false
-pre_cmd=""
-post_cmd=""
+rebase_interactive=false
+before_cmd=""
+after_cmd=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    -h|--help)   usage ;;
+    -ri)         rebase=true; rebase_interactive=true; shift ;;
     -r)          rebase=true; shift ;;
-    --pre|-b)    [ -n "${2:-}" ] || die "$1 requires a command argument"
-                 pre_cmd="$2"; shift 2 ;;
-    --post|-a)   [ -n "${2:-}" ] || die "$1 requires a command argument"
-                 post_cmd="$2"; shift 2 ;;
-    *)           die "unknown option: $1" ;;
+    --before|-b) [ -n "${2:-}" ] || die "$1 requires a command argument"
+                 before_cmd="$2"; shift 2 ;;
+    --after|-a)  [ -n "${2:-}" ] || die "$1 requires a command argument"
+                 after_cmd="$2"; shift 2 ;;
+    *)           die "unknown option: $1 (see git up --help)" ;;
   esac
 done
 
@@ -101,15 +121,16 @@ fi
 
 if [ "$old_head" != "$new_head" ]; then pulled_new=true; else pulled_new=false; fi
 
-# -- pre hook (if --pre) ---------------------------------------------
+new_count=0
+if $pulled_new; then
+  new_count=$(git rev-list --count "$old_head".."$new_head")
+fi
 
-if [ -n "$pre_cmd" ]; then
-  if $pulled_new; then
-    echo "Running --pre: $pre_cmd"
-    eval "$pre_cmd" || warn "--pre command failed"
-  else
-    warn "--pre skipped (no new commits)"
-  fi
+# -- before hook -----------------------------------------------------
+
+if [ -n "$before_cmd" ] && $pulled_new; then
+  echo "Running --before: $before_cmd"
+  eval "$before_cmd" || warn "--before command failed"
 fi
 
 # -- changelog -------------------------------------------------------
@@ -134,27 +155,41 @@ fi
 
 # -- rebase (if -r) --------------------------------------------------
 
+did_rebase=false
 if $rebase && [ "$current_branch" != "$default_branch" ]; then
-  git rebase -i "$default_branch" || true   # allow interactive rebase to pause
+  if $rebase_interactive; then
+    git rebase -i "$default_branch" || true
+  else
+    git rebase "$default_branch" || true
+  fi
 
-  # Check if rebase is still in progress (conflicts / edit stop)
   if has_inflight_operation; then
     if $did_stash; then
       warn "rebase paused — run 'git stash pop' after completing the rebase"
     fi
     exit 1
   fi
+  did_rebase=true
 fi
 
-# -- post hook (if --post) -------------------------------------------
+# -- after hook ------------------------------------------------------
 
-if [ -n "$post_cmd" ] && $pulled_new; then
-  echo "Running --post: $post_cmd"
-  eval "$post_cmd" || warn "--post command failed"
+if [ -n "$after_cmd" ] && $pulled_new; then
+  echo "Running --after: $after_cmd"
+  eval "$after_cmd" || warn "--after command failed"
 fi
 
 # -- restore stash ----------------------------------------------------
 
 if $did_stash; then
   git stash pop || warn "stash applied with conflicts — resolve manually"
+fi
+
+# -- summary ---------------------------------------------------------
+
+if $pulled_new; then
+  summary="$default_branch updated ($new_count new)"
+  $did_rebase && summary="$summary, rebased $current_branch"
+  $did_stash && summary="$summary, stash restored"
+  printf 'git-up: %s\n' "$summary"
 fi
