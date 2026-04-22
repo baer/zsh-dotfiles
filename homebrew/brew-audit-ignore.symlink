@@ -1,5 +1,10 @@
 # brew-audit-ignore
 #
-# Packages listed here are excluded from brew-audit drift detection.
+# Packages listed here are excluded from brew-audit drift detection
+# on ALL machines (this file is committed to the dotfiles repo).
+#
+# For machine-specific ignores, use ~/.brew-audit-ignore-local instead
+# (select "skip-local" in brew-audit's triage UI).
+#
 # Add formula or cask names, one per line.
 # Lines starting with # are comments.

@@ -148,7 +148,7 @@ _remove_cask() {
 _add_to_ignore() {
   local pkg="$1"
   if [[ ! -f "$IGNORE_FILE" ]]; then
-    printf "# brew-audit-ignore\n#\n# Packages listed here are excluded from brew-audit drift detection.\n# Add formula or cask names, one per line.\n" > "$IGNORE_FILE"
+    printf "# brew-audit-ignore\n#\n# Packages listed here are excluded from brew-audit drift detection\n# on ALL machines (this file is committed to the dotfiles repo).\n#\n# For machine-specific ignores, use ~/.brew-audit-ignore-local instead.\n" > "$IGNORE_FILE"
   fi
   echo "$pkg" >> "$IGNORE_FILE"
   log_success "Added $pkg to ignore list"
