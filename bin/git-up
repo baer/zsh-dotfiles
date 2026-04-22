@@ -99,7 +99,7 @@ else
   new_head=$(git rev-parse HEAD)
 fi
 
-pulled_new=$([ "$old_head" != "$new_head" ] && echo true || echo false)
+if [ "$old_head" != "$new_head" ]; then pulled_new=true; else pulled_new=false; fi
 
 # -- pre hook (if --pre) ---------------------------------------------
 
