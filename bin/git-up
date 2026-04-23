@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Usage: git up [-r|-ri] [--before CMD] [--after CMD]
+# Usage: git up [-r] [-i] [--before CMD] [--after CMD]
 #
 # Updates the default branch (main/master) from origin, then
 # returns to the branch you were on.  Dirty working trees are
@@ -25,7 +25,7 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: git up [-r|-ri] [--before CMD] [--after CMD]
+Usage: git up [-r] [-i] [--before CMD] [--after CMD]
 
 Updates the default branch (main/master) from origin, then
 returns to the branch you were on.  Dirty working trees are
@@ -33,7 +33,8 @@ auto-stashed and restored afterward.
 
 Options:
   -r              Rebase the current branch onto the default branch.
-  -ri             Rebase interactively (opens editor for rebase plan).
+  -i              Use interactive rebase (requires -r).
+  -ri             Same as -r -i.
   --before CMD    Run CMD on the default branch after pulling.
   -b CMD          Skipped if no new commits were pulled.
   --after CMD     Run CMD on the current branch after the update.
@@ -41,12 +42,14 @@ Options:
   -h, --help      Show this message.
 
 Hook commands are passed to eval — use only with trusted input.
+--before fires when new commits are pulled.
+--after fires when new commits are pulled or rebase moved commits.
 
 Changelog of pulled commits is printed after the update.
 
 Examples:
   git up -r
-  git up -ri
+  git up -r -i
   git up --before "make build" --after "yarn install"
   git up -r -b "make" -a "yarn"
 EOF
@@ -86,6 +89,7 @@ while [ $# -gt 0 ]; do
     -h|--help)   usage ;;
     -ri)         rebase=true; rebase_interactive=true; shift ;;
     -r)          rebase=true; shift ;;
+    -i)          rebase_interactive=true; shift ;;
     --before|-b) [ -n "${2:-}" ] || die "$1 requires a command argument"
                  before_cmd="$2"; shift 2 ;;
     --after|-a)  [ -n "${2:-}" ] || die "$1 requires a command argument"
