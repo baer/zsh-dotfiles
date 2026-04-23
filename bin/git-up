@@ -142,9 +142,13 @@ fi
 
 # -- before hook -----------------------------------------------------
 
-if [ -n "$before_cmd" ] && $pulled_new; then
-  echo "Running --before: $before_cmd"
-  eval "$before_cmd" || warn "--before command failed"
+if [ -n "$before_cmd" ]; then
+  if $pulled_new; then
+    echo "Running --before: $before_cmd"
+    eval "$before_cmd" || warn "--before command failed"
+  else
+    warn "--before skipped (no new commits)"
+  fi
 fi
 
 # -- changelog -------------------------------------------------------
@@ -197,13 +201,15 @@ fi
 changed=false
 $pulled_new && changed=true
 $did_rebase_change && changed=true
-: "$changed"  # used by after-hook and summary (wired in next tasks)
-
 # -- after hook ------------------------------------------------------
 
-if [ -n "$after_cmd" ] && $pulled_new; then
-  echo "Running --after: $after_cmd"
-  eval "$after_cmd" || warn "--after command failed"
+if [ -n "$after_cmd" ]; then
+  if $changed; then
+    echo "Running --after: $after_cmd"
+    eval "$after_cmd" || warn "--after command failed"
+  else
+    warn "--after skipped (no changes)"
+  fi
 fi
 
 # -- restore stash ----------------------------------------------------
