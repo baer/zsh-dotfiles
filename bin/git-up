@@ -15,6 +15,14 @@ set -e
 die()  { printf 'git-up: %s\n' "$1" >&2; exit 1; }
 warn() { printf 'git-up: %s\n' "$1" >&2; }
 
+# -- color detection ------------------------------------------------
+
+if [ -n "$NO_COLOR" ] || [ ! -t 1 ]; then
+  color_flag="--no-color"
+else
+  color_flag="--color"
+fi
+
 usage() {
   cat <<'EOF'
 Usage: git up [-r|-ri] [--before CMD] [--after CMD]
@@ -137,7 +145,8 @@ fi
 
 if $pulled_new; then
   echo "Log:"
-  git log --color --pretty=oneline --abbrev-commit "$old_head".."$new_head" \
+  # shellcheck disable=SC2086
+  git log $color_flag --pretty=oneline --abbrev-commit "$old_head".."$new_head" \
     | sed 's/^/  /'
 fi
 
