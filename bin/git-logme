@@ -153,9 +153,12 @@ if [ -n "$since_filter" ]; then
   log_args+=(--since="$since_filter")
 fi
 
+# Always respect NO_COLOR / pipe detection
+log_args+=("$color_flag")
+
 # Default format when no format flags given
 if ! $has_format_flag; then
-  log_args+=("$color_flag" "--format=%C(auto)%h %C(blue)%ad %C(auto)%s%C(dim)%d" --date=relative)
+  log_args+=("--format=%C(auto)%h %C(blue)%ad %C(auto)%s%C(dim)%d" --date=relative)
 fi
 
 # User pass-through args
