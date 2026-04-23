@@ -1,5 +1,9 @@
 export STARSHIP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/starship.toml"
 
+# Suppress starship's internal timeout warnings — we provide a friendlier
+# alternative via _starship_slow_git_hint below.
+export STARSHIP_LOG=error
+
 # Pre-select random emoji in-process so starship doesn't spawn a subprocess.
 # The emoji list was previously in starship.toml as a custom command module;
 # computing it here in zsh memory avoids a zsh --no-rcs fork on every prompt.
@@ -13,4 +17,30 @@ add-zsh-hook precmd _precmd_random_emoji
 
 if (( $+commands[starship] )); then
   eval "$(starship init zsh)"
+
+  # One-shot hint for large repos where git is likely to exceed starship's
+  # command_timeout on a cold filesystem cache. Uses a fast stat on the git
+  # index to predict slowness, prints a friendly hint, and warms the cache
+  # in the background so the next prompt renders fully.
+  _starship_slow_git_hint() {
+    add-zsh-hook -d precmd _starship_slow_git_hint
+
+    local git_dir
+    git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 0
+    local index="$git_dir/index"
+    [[ -f "$index" ]] || return 0
+
+    local size
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      size=$(command stat -f%z "$index" 2>/dev/null)
+    else
+      size=$(command stat -c%s "$index" 2>/dev/null)
+    fi
+
+    if (( ${size:-0} > 10000000 )); then
+      print -P "%F{yellow}hint:%f Large repo — git may be slow on the first prompt. Warming index in the background..."
+      git status &>/dev/null &!
+    fi
+  }
+  add-zsh-hook precmd _starship_slow_git_hint
 fi
