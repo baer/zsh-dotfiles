@@ -1,5 +1,5 @@
 #!/bin/sh
-# git-up — pull default branch, rebase, stash/restore. Run 'git up --help'.
+# git-up — pull default branch, rebase, stash/restore. Run 'git up -h'.
 
 set -e
 
@@ -87,7 +87,7 @@ while [ $# -gt 0 ]; do
                  before_cmd="$2"; shift 2 ;;
     --after|-a)  [ -n "${2:-}" ] || die "$1 requires a command argument"
                  after_cmd="$2"; shift 2 ;;
-    *)           die "unknown option: $1 (see git up --help)" ;;
+    *)           die "unknown option: $1 (see git up -h)" ;;
   esac
 done
 
