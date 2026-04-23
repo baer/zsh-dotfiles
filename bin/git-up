@@ -174,7 +174,6 @@ fi
 
 # -- rebase (if -r) --------------------------------------------------
 
-did_rebase=false
 did_rebase_change=false
 if $rebase && [ "$current_branch" != "$default_branch" ]; then
   old_rebase_head=$(git rev-parse HEAD)
@@ -190,7 +189,6 @@ if $rebase && [ "$current_branch" != "$default_branch" ]; then
     fi
     exit 1
   fi
-  did_rebase=true
   if [ "$old_rebase_head" != "$(git rev-parse HEAD)" ]; then
     did_rebase_change=true
   fi
@@ -222,7 +220,9 @@ fi
 
 if $pulled_new; then
   summary="$default_branch updated ($new_count new)"
-  $did_rebase && summary="$summary, rebased $current_branch"
-  $did_stash && summary="$summary, stash restored"
-  printf 'git-up: %s\n' "$summary"
+else
+  summary="$default_branch already up to date"
 fi
+$did_rebase_change && summary="$summary, rebased $current_branch onto $default_branch"
+$did_stash && summary="$summary, stash restored"
+printf 'git-up: %s\n' "$summary"
