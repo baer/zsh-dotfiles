@@ -165,7 +165,7 @@ if [ "$current_branch" != "$default_branch" ]; then
   }
 fi
 
-# -- rebase (if -r) --------------------------------------------------
+# -- rebase (if --rebase) --------------------------------------------
 
 did_rebase_change=false
 if $rebase && [ "$current_branch" != "$default_branch" ]; then
