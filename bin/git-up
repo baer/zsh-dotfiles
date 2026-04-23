@@ -171,7 +171,9 @@ fi
 # -- rebase (if -r) --------------------------------------------------
 
 did_rebase=false
+did_rebase_change=false
 if $rebase && [ "$current_branch" != "$default_branch" ]; then
+  old_rebase_head=$(git rev-parse HEAD)
   if $rebase_interactive; then
     git rebase -i "$default_branch" || true
   else
@@ -185,7 +187,17 @@ if $rebase && [ "$current_branch" != "$default_branch" ]; then
     exit 1
   fi
   did_rebase=true
+  if [ "$old_rebase_head" != "$(git rev-parse HEAD)" ]; then
+    did_rebase_change=true
+  fi
 fi
+
+# -- compute changed --------------------------------------------------
+
+changed=false
+$pulled_new && changed=true
+$did_rebase_change && changed=true
+: "$changed"  # used by after-hook and summary (wired in next tasks)
 
 # -- after hook ------------------------------------------------------
 
