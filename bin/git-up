@@ -32,7 +32,7 @@ Options:
   -b CMD          Skipped if no new commits were pulled.
   --after CMD     Run CMD on the current branch after the update.
   -a CMD          Skipped if no meaningful changes occurred.
-  -h, --help      Show this message.
+  -h              Show this message.
 
 Hook commands are passed to eval — use only with trusted input.
 --before fires when new commits are pulled.
@@ -79,7 +79,7 @@ before_cmd=""
 after_cmd=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help)   usage ;;
+    -h)          usage ;;
     -ri)         rebase=true; rebase_interactive=true; shift ;;
     -r)          rebase=true; shift ;;
     -i)          rebase_interactive=true; shift ;;
