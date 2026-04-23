@@ -18,21 +18,21 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: git up [-r] [-i] [--before CMD] [--after CMD]
+Usage: git up [--rebase] [--interactive] [--before CMD] [--after CMD]
 
 Updates the default branch (main/master) from origin, then
 returns to the branch you were on.  Dirty working trees are
 auto-stashed and restored afterward.
 
 Options:
-  -r, --rebase           Rebase the current branch onto the default branch.
-  -i, --interactive      Use interactive rebase (requires -r).
-  -ri                    Same as -r -i.
-  --before CMD, -b CMD   Run CMD on the default branch after pulling.
-                         Skipped if no new commits were pulled.
-  --after CMD, -a CMD    Run CMD on the current branch after the update.
-                         Skipped if no meaningful changes occurred.
-  -h                     Show this message.
+  --rebase, -r          Rebase the current branch onto the default branch.
+  --interactive, -i     Use interactive rebase (requires --rebase).
+  -ri                   Same as --rebase --interactive.
+  --before, -b CMD      Run CMD on the default branch after pulling.
+                        Skipped if no new commits were pulled.
+  --after, -a CMD       Run CMD on the current branch after the update.
+                        Skipped if no meaningful changes occurred.
+  -h                    Show this message.
 
 Hook commands are passed to eval — use only with trusted input.
 --before fires when new commits are pulled.
@@ -41,7 +41,7 @@ Hook commands are passed to eval — use only with trusted input.
 Changelog of pulled commits is printed after the update.
 
 Examples:
-  git up -r
+  git up --rebase
   git up --rebase --interactive
   git up --before "make build" --after "yarn install"
   git up -r -b "make" -a "yarn"
