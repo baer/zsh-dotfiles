@@ -38,7 +38,7 @@ Options:
   --before CMD    Run CMD on the default branch after pulling.
   -b CMD          Skipped if no new commits were pulled.
   --after CMD     Run CMD on the current branch after the update.
-  -a CMD          Skipped if no new commits were pulled.
+  -a CMD          Skipped if no meaningful changes occurred.
   -h, --help      Show this message.
 
 Hook commands are passed to eval — use only with trusted input.
@@ -199,6 +199,7 @@ fi
 changed=false
 $pulled_new && changed=true
 $did_rebase_change && changed=true
+
 # -- after hook ------------------------------------------------------
 
 if [ -n "$after_cmd" ]; then
