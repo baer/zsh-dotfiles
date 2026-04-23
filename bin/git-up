@@ -1,12 +1,5 @@
 #!/bin/sh
-#
-# Usage: git up [-r] [-i] [--before CMD] [--after CMD]
-#
-# Updates the default branch (main/master) from origin, then
-# returns to the branch you were on.  Dirty working trees are
-# auto-stashed and restored afterward.
-#
-# Changelog of pulled commits is printed after the update.
+# git-up — pull default branch, rebase, stash/restore. Run 'git up --help'.
 
 set -e
 
