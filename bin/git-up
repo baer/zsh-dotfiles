@@ -122,12 +122,12 @@ fi
 
 if [ "$current_branch" = "$default_branch" ]; then
   old_head=$(git rev-parse HEAD)
-  git pull --prune
+  git pull --ff-only --prune
   new_head=$(git rev-parse HEAD)
 else
   git checkout "$default_branch"
   old_head=$(git rev-parse HEAD)
-  git pull --prune
+  git pull --ff-only --prune
   new_head=$(git rev-parse HEAD)
 fi
 
