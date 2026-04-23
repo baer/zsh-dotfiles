@@ -109,6 +109,8 @@ has_inflight_operation \
 default_branch=$(detect_default_branch) \
   || die "could not determine default branch"
 
+printf 'git-up: updating %s from origin...\n' "$default_branch"
+
 # -- stash (if needed) -----------------------------------------------
 
 did_stash=false
