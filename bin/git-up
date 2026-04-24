@@ -5,7 +5,7 @@ set -e
 
 # -- helpers ---------------------------------------------------------
 
-die()  { printf 'git-up: %s\n' "$1" >&2; exit 1; }
+die()  { _exit_handled=true; printf 'git-up: %s\n' "$1" >&2; exit 1; }
 warn() { printf 'git-up: %s\n' "$1" >&2; }
 
 # -- color detection ------------------------------------------------
@@ -15,6 +15,54 @@ if [ -n "$NO_COLOR" ] || [ ! -t 1 ]; then
 else
   color_flag="--color"
 fi
+
+# -- cleanup trap ----------------------------------------------------
+
+_exit_handled=false
+
+_trap_exit() {
+  rc=$?
+  [ "$rc" -eq 0 ] && return
+  $_exit_handled && return
+
+  set +e  # don't exit the trap on errors during cleanup
+
+  warn "failed unexpectedly (exit $rc)"
+
+  # Try to return to the original branch
+  _restored_branch=false
+  if [ -n "${current_branch:-}" ] && [ -n "${default_branch:-}" ] \
+     && [ "$current_branch" != "$default_branch" ]; then
+    _on_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+    if [ "$_on_branch" = "$default_branch" ]; then
+      if git checkout "$current_branch" 2>/dev/null; then
+        warn "returned to $current_branch"
+        _restored_branch=true
+      else
+        warn "could not return to $current_branch — you are on $default_branch"
+      fi
+    else
+      _restored_branch=true
+    fi
+  else
+    _restored_branch=true
+  fi
+
+  # Restore stash only if we're back on the right branch
+  if [ "${did_stash:-false}" = true ]; then
+    if $_restored_branch; then
+      if git stash pop; then
+        warn "stash restored"
+      else
+        warn "stash pop failed — run 'git stash pop' manually"
+      fi
+    else
+      warn "stash preserved — run 'git stash pop' after returning to $current_branch"
+    fi
+  fi
+}
+
+trap _trap_exit EXIT
 
 usage() {
   cat <<'EOF'
@@ -161,7 +209,7 @@ if [ "$current_branch" != "$default_branch" ]; then
     if $did_stash; then
       warn "your stash is preserved — run 'git stash pop' when ready"
     fi
-    exit 1
+    _exit_handled=true; exit 1
   }
 fi
 
@@ -180,7 +228,7 @@ if $rebase && [ "$current_branch" != "$default_branch" ]; then
     if $did_stash; then
       warn "rebase paused — run 'git stash pop' after completing the rebase"
     fi
-    exit 1
+    _exit_handled=true; exit 1
   fi
   if [ "$old_rebase_head" != "$(git rev-parse HEAD)" ]; then
     did_rebase_change=true
