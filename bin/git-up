@@ -235,11 +235,11 @@ if $pulled_new; then
     | sed 's/^/  /'
 fi
 
-# -- return to branch ------------------------------------------------
+# -- go to target branch -----------------------------------------------
 
-if [ "$current_branch" != "$default_branch" ]; then
-  git checkout "$current_branch" || {
-    warn "could not return to '$current_branch' — staying on $default_branch"
+if [ "$target_branch" != "$default_branch" ]; then
+  git checkout "$target_branch" || {
+    warn "could not checkout '$target_branch' — staying on $default_branch"
     if $did_stash; then
       warn "your stash is preserved — run 'git stash pop' when ready"
     fi
@@ -250,7 +250,7 @@ fi
 # -- rebase (if --rebase) --------------------------------------------
 
 did_rebase_change=false
-if $rebase && [ "$current_branch" != "$default_branch" ]; then
+if $rebase && [ "$target_branch" != "$default_branch" ]; then
   old_rebase_head=$(git rev-parse HEAD)
   if $rebase_interactive; then
     git rebase -i "$default_branch" || true
@@ -331,7 +331,7 @@ if $pulled_new; then
 else
   summary="$default_branch already up to date"
 fi
-$did_rebase_change && summary="$summary, rebased $current_branch onto $default_branch"
+$did_rebase_change && summary="$summary, rebased $target_branch onto $default_branch"
 if $was_stashed; then
   if $stash_clean; then
     summary="$summary, stash restored"
