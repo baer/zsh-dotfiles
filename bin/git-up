@@ -133,6 +133,7 @@ rebase=false
 rebase_interactive=false
 before_cmd=""
 after_cmd=""
+target_branch=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -h)                   usage ;;
@@ -143,7 +144,9 @@ while [ $# -gt 0 ]; do
                           before_cmd="$2"; shift 2 ;;
     --after|-a)           [ -n "${2:-}" ] || die "$1 requires a command argument"
                           after_cmd="$2"; shift 2 ;;
-    *)                    die "unknown option: $1 (see git up -h)" ;;
+    -*)                   die "unknown option: $1 (see git up -h)" ;;
+    *)                    [ -z "$target_branch" ] || die "unexpected argument: $1 (see git up -h)"
+                          target_branch="$1"; shift ;;
   esac
 done
 
@@ -158,7 +161,30 @@ has_inflight_operation \
 default_branch=$(detect_default_branch) \
   || die "could not determine default branch"
 
-printf 'git-up: updating %s from origin...\n' "$default_branch"
+# -- validate target branch -------------------------------------------
+
+if [ -n "$target_branch" ]; then
+  git show-ref --verify --quiet "refs/heads/$target_branch" 2>/dev/null \
+    || die "branch '$target_branch' does not exist"
+  [ "$target_branch" != "$default_branch" ] \
+    || die "target branch cannot be the default branch"
+  if [ "$target_branch" = "$current_branch" ]; then
+    # Already on the target — just enable rebase, no special handling
+    target_branch=""
+  fi
+  rebase=true
+fi
+
+# Normalize: target_branch is always "the branch we act on"
+if [ -z "$target_branch" ]; then
+  target_branch="$current_branch"
+fi
+
+if [ "$target_branch" != "$current_branch" ]; then
+  printf 'git-up: updating %s from origin, targeting %s...\n' "$default_branch" "$target_branch"
+else
+  printf 'git-up: updating %s from origin...\n' "$default_branch"
+fi
 
 # -- stash (if needed) -----------------------------------------------
 
