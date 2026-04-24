@@ -3,4 +3,5 @@ Brewfile.lock.json
 .claude/settings.local.json
 .bootstrap.log
 .brew-audit.log
+.brew-update.log
 .worktrees/

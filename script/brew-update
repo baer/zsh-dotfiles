@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+#
+# brew-update — Homebrew maintenance without full bootstrap
+#
+# Updates Homebrew, upgrades packages, syncs Brewfile, checks drift,
+# and checks for vulnerabilities. Run standalone or via the `brewup` alias.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+DOTFILES_ROOT=$(pwd -P)
+LOGFILE="$DOTFILES_ROOT/.brew-update.log"
+BREWFILE="$DOTFILES_ROOT/Brewfile"
+
+# shellcheck source=lib/term.sh
+source "$DOTFILES_ROOT/script/lib/term.sh"
+# shellcheck source=lib/log.sh
+source "$DOTFILES_ROOT/script/lib/log.sh"
+# shellcheck source=lib/spinner.sh
+source "$DOTFILES_ROOT/script/lib/spinner.sh"
+# shellcheck source=lib/error.sh
+source "$DOTFILES_ROOT/script/lib/error.sh"
+# shellcheck source=lib/brewfile.sh
+source "$DOTFILES_ROOT/script/lib/brewfile.sh"
+# shellcheck source=lib/skip-lists.sh
+source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
+# shellcheck source=lib/drift.sh
+source "$DOTFILES_ROOT/script/lib/drift.sh"
+# shellcheck source=lib/brew-ops.sh
+source "$DOTFILES_ROOT/script/lib/brew-ops.sh"
+
+# ---------------------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------------------
+
+VERBOSE=false
+SKIP_UPGRADE=false
+SKIP_CHECKS=false
+
+usage() {
+  cat <<EOF
+Usage: script/brew-update [options]
+
+Update Homebrew, upgrade packages, and sync Brewfile.
+
+Options:
+  --help           Show this message
+  --verbose        Show full command output instead of spinners
+  --skip-upgrade   Skip brew upgrade (update index and bundle only)
+  --skip-checks    Skip drift and vulnerability checks
+EOF
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help)         usage ;;
+    --verbose)      VERBOSE=true ;;
+    --skip-upgrade) SKIP_UPGRADE=true ;;
+    --skip-checks)  SKIP_CHECKS=true ;;
+    *)
+      log_error "Unknown option: $1"
+      usage
+      ;;
+  esac
+  shift
+done
+
+# ---------------------------------------------------------------------------
+# Traps
+# ---------------------------------------------------------------------------
+
+_on_error() {
+  _spinner_cleanup
+  log_error_context "$LOGFILE" "brew-update"
+  if [[ -x "$DOTFILES_ROOT/script/brew-health" ]]; then
+    printf "\n"
+    "$DOTFILES_ROOT/script/brew-health" || true
+  fi
+}
+
+trap '_on_error' ERR
+trap '_spinner_cleanup' EXIT
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+: > "$LOGFILE"
+
+log_header "$DOTFILES_ROOT"
+
+# Preflight — require Homebrew
+if ! command -v brew &>/dev/null; then
+  log_error "Homebrew not found. Run script/bootstrap first."
+  exit 1
+fi
+
+# Source localrc for HOMEBREW_BUNDLE_CASK_SKIP
+# shellcheck disable=SC1091
+[[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
+
+# Cask skip detection — save/restore shell options since brew-skip-detect uses set -euo pipefail
+if [[ -f "$DOTFILES_ROOT/script/brew-skip-detect" ]]; then
+  _saved_opts=$(set +o)
+  source "$DOTFILES_ROOT/script/brew-skip-detect"
+  eval "$_saved_opts"
+fi
+
+brew_run_update
+
+if ! $SKIP_UPGRADE; then
+  brew_run_upgrade
+fi
+
+brew_run_bundle
+
+if ! $SKIP_CHECKS; then
+  brew_detect_drift
+  if [[ -z "${_DRIFT_COUNT:-}" ]]; then
+    log_warn "drift check skipped: brew query failed (Homebrew may be broken)"
+  elif [[ "$_DRIFT_COUNT" -gt 0 ]]; then
+    log_warn "$_DRIFT_COUNT packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}"
+  fi
+
+  brew_check_vulns
+  if [[ "${_VULN_COUNT:-0}" -gt 0 ]]; then
+    log_warn "$_VULN_COUNT vulnerable packages — run ${_BOLD}script/brew-health${_RST}"
+  fi
+fi
+
+printf "\n  %s %sDone in %ss%s — %s\n\n" "$_CHECK" "$_BOLD" "$SECONDS" "$_RST" "$_BREW_SUMMARY"

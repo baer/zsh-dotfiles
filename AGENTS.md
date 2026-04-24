@@ -19,6 +19,7 @@ Personal zsh dotfiles using topical organization
 
 - `script/bootstrap` -- idempotent setup and maintenance (symlinks, git config, brew update/upgrade/bundle, topic install scripts)
 - `script/brew-skip-detect` -- detects casks installed outside Homebrew, offers skip or adopt per-app, writes skip list to `~/.localrc`
+- `script/brew-update` -- standalone Homebrew maintenance: update, upgrade, bundle, drift check, vuln check. Flags: `--verbose`, `--skip-upgrade`, `--skip-checks`. Alias: `brewup`
 - `script/brew-audit` -- detects Brewfile drift (installed packages not in Brewfile) and offers to adopt manually installed apps into Homebrew management. Actions: `skip` (this run), `add` (to Brewfile), `remove` (uninstall), `skip-local` (ignore on this machine only), `skip-always` (ignore on all machines)
 - `reload!` -- re-source ~/.zshrc
 - `source ~/.zshrc` -- same as reload!, works outside zsh

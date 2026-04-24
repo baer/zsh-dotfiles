@@ -28,6 +28,8 @@ source "$DOTFILES_ROOT/script/lib/brewfile.sh"
 source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
 # shellcheck source=lib/drift.sh
 source "$DOTFILES_ROOT/script/lib/drift.sh"
+# shellcheck source=lib/brew-ops.sh
+source "$DOTFILES_ROOT/script/lib/brew-ops.sh"
 
 BREWFILE="$DOTFILES_ROOT/Brewfile"
 
@@ -380,145 +382,6 @@ _phase4_ensure_homebrew() {
   fi
 }
 
-_phase4_update_and_bundle() {
-  if $VERBOSE; then
-    log_info "brew update..."
-    brew update 2>&1 | tee -a "$LOGFILE"
-    log_success "brew update"
-
-    log_info "brew upgrade..."
-    if brew upgrade 2>&1 | tee -a "$LOGFILE"; then
-      log_success "brew upgrade"
-    else
-      _upgrade_tail="$(tail -n 30 "$LOGFILE")"
-      if echo "$_upgrade_tail" | grep -qE 'has been disabled|is not there|Permission denied|locked'; then
-        log_error "brew upgrade (see ${LOGFILE##*/} for details)"
-      else
-        log_warn "brew upgrade (some packages skipped)"
-      fi
-    fi
-
-    log_info "brew bundle..."
-    _log_lines_before=$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)
-    brew bundle --file="$DOTFILES_ROOT/Brewfile" 2>&1 | tee -a "$LOGFILE"
-    log_success "brew bundle"
-  else
-    run_with_substep_spinner "brew update" "$LOGFILE" \
-      brew update
-
-    substep_start "brew upgrade"
-    if brew upgrade >> "$LOGFILE" 2>&1; then
-      substep_stop ok "brew upgrade"
-    else
-      _upgrade_tail="$(tail -n 30 "$LOGFILE")"
-      if echo "$_upgrade_tail" | grep -qE 'has been disabled|is not there|Permission denied|locked'; then
-        substep_stop fail "brew upgrade (errors in ${LOGFILE##*/})"
-      else
-        substep_stop warn "brew upgrade (some packages skipped)"
-      fi
-    fi
-
-    _log_lines_before=$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)
-    run_with_substep_streaming_spinner "brew bundle" "$LOGFILE" \
-      brew bundle --file="$DOTFILES_ROOT/Brewfile"
-  fi
-
-  _brew_installed=0
-  _brew_upgraded=0
-  _brew_using=0
-  while IFS= read -r _line; do
-    case "$_line" in
-      Installing\ *) _brew_installed=$((_brew_installed + 1)) ;;
-      Upgrading\ *)  _brew_upgraded=$((_brew_upgraded + 1)) ;;
-      Using\ *)      _brew_using=$((_brew_using + 1)) ;;
-    esac
-  done < <(tail -n +"$((_log_lines_before + 1))" "$LOGFILE")
-
-  _brew_summary=""
-  if (( _brew_installed > 0 )); then
-    _brew_summary="${_brew_installed} installed"
-  fi
-  if (( _brew_upgraded > 0 )); then
-    [[ -n "$_brew_summary" ]] && _brew_summary+=", "
-    _brew_summary+="${_brew_upgraded} upgraded"
-  fi
-  if [[ -z "$_brew_summary" ]]; then
-    _brew_summary="all up to date"
-  fi
-
-  if $VERBOSE; then
-    log_success "$_brew_summary"
-  fi
-}
-
-_phase4_detect_drift() {
-  if ! $VERBOSE; then
-    substep_start "drift check"
-  fi
-
-  local _audit_count
-  _audit_count="$(_count_total_drift 2>/dev/null)" || _audit_count=""
-
-  if [[ -z "$_audit_count" ]]; then
-    _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
-    if $VERBOSE; then
-      log_warn "drift check skipped: brew query failed (Homebrew may be broken)"
-    else
-      substep_stop warn "drift check (skipped — brew query failed)"
-    fi
-  elif [[ "$_audit_count" -gt 0 ]]; then
-    _ACTIONABLE_WARNINGS+=("$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}")
-    if $VERBOSE; then
-      log_warn "$_audit_count packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}"
-    else
-      substep_stop warn "drift check ($_audit_count untracked)"
-    fi
-  else
-    if ! $VERBOSE; then
-      substep_stop ok "drift check"
-    fi
-  fi
-}
-
-_phase4_check_vulnerabilities() {
-  if ! command -v brew-vulns &>/dev/null; then
-    return 0
-  fi
-
-  if ! $VERBOSE; then
-    substep_start "vuln check"
-  fi
-
-  _vuln_count=0
-  _vuln_output=""
-
-  if command -v gtimeout &>/dev/null; then
-    _vuln_output="$(gtimeout 15 brew vulns --severity high 2>/dev/null)" || true
-  else
-    _vuln_output="$(brew vulns --severity high 2>/dev/null)" || true
-  fi
-
-  if [[ -n "$_vuln_output" ]]; then
-    _vuln_count="$(echo "$_vuln_output" | grep -cE '^[a-z].*\(' || true)"
-  fi
-
-  if [[ $_vuln_count -gt 0 ]]; then
-    _ACTIONABLE_WARNINGS+=("$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}")
-  fi
-
-  if $VERBOSE; then
-    if [[ $_vuln_count -gt 0 ]]; then
-      log_warn "$_vuln_count vulnerable packages — run ${_BOLD}script/brew-health${_RST}"
-    fi
-  else
-    if [[ $_vuln_count -gt 0 ]]; then
-      substep_stop warn "vuln check ($_vuln_count vulnerable)"
-    else
-      substep_stop ok "vuln check"
-    fi
-  fi
-}
-
 # ---------------------------------------------------------------------------
 # Phase 4: Installing Software
 # ---------------------------------------------------------------------------
@@ -550,12 +413,23 @@ else
     eval "$_saved_opts"
   fi
 
-  _phase4_update_and_bundle
-  _phase4_detect_drift
-  _phase4_check_vulnerabilities
+  brew_run_update
+  brew_run_upgrade
+  brew_run_bundle
+
+  brew_detect_drift
+  if [[ -z "${_DRIFT_COUNT:-}" ]]; then
+    _ACTIONABLE_WARNINGS+=("drift check skipped: brew query failed (Homebrew may be broken)")
+  elif [[ "$_DRIFT_COUNT" -gt 0 ]]; then
+    _ACTIONABLE_WARNINGS+=("$_DRIFT_COUNT packages not in Brewfile — run ${_BOLD}script/brew-audit${_RST}")
+  fi
+
+  brew_check_vulns
+  [[ "${_VULN_COUNT:-0}" -gt 0 ]] && \
+    _ACTIONABLE_WARNINGS+=("$_VULN_COUNT vulnerable packages — run ${_BOLD}script/brew-health${_RST}")
 
   if ! $VERBOSE; then
-    phase_resolve ok "$_brew_summary"
+    phase_resolve ok "$_BREW_SUMMARY"
   fi
 fi
 
