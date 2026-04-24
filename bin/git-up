@@ -254,8 +254,40 @@ fi
 
 # -- restore stash ----------------------------------------------------
 
-if $did_stash; then
-  git stash pop || warn "stash applied with conflicts — resolve manually"
+was_stashed=$did_stash
+stash_clean=false
+if $was_stashed; then
+  if git stash pop; then
+    stash_clean=true
+  else
+    # Auto-resolve lockfile conflicts (keep the pulled version)
+    _conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null)
+    if [ -z "$_conflicted" ]; then
+      warn "stash pop failed — run 'git stash pop' manually"
+    else
+      _remaining=false
+      for _f in $_conflicted; do
+        case "${_f##*/}" in
+          yarn.lock|package-lock.json|pnpm-lock.yaml|Gemfile.lock|Cargo.lock|poetry.lock|composer.lock|go.sum)
+            if git checkout --ours -- "$_f" && git add -- "$_f"; then
+              warn "auto-resolved $_f (kept pulled version — re-run your package manager)"
+            else
+              _remaining=true
+            fi
+            ;;
+          *) _remaining=true ;;
+        esac
+      done
+
+      if $_remaining; then
+        warn "stash applied with conflicts — resolve manually"
+      else
+        git stash drop 2>/dev/null
+        stash_clean=true
+      fi
+    fi
+  fi
+  did_stash=false  # consumed — prevent trap from re-popping
 fi
 
 # -- summary ---------------------------------------------------------
@@ -266,5 +298,11 @@ else
   summary="$default_branch already up to date"
 fi
 $did_rebase_change && summary="$summary, rebased $current_branch onto $default_branch"
-$did_stash && summary="$summary, stash restored"
+if $was_stashed; then
+  if $stash_clean; then
+    summary="$summary, stash restored"
+  else
+    summary="$summary, stash conflicts (resolve manually)"
+  fi
+fi
 printf 'git-up: %s\n' "$summary"
