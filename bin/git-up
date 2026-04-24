@@ -31,18 +31,13 @@ _trap_exit() {
 
   # Try to return to the original branch
   _restored_branch=false
-  if [ -n "${current_branch:-}" ] && [ -n "${default_branch:-}" ] \
-     && [ "$current_branch" != "$default_branch" ]; then
-    _on_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
-    if [ "$_on_branch" = "$default_branch" ]; then
-      if git checkout "$current_branch" 2>/dev/null; then
-        warn "returned to $current_branch"
-        _restored_branch=true
-      else
-        warn "could not return to $current_branch — you are on $default_branch"
-      fi
-    else
+  _on_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+  if [ -n "${current_branch:-}" ] && [ "$_on_branch" != "${current_branch:-}" ]; then
+    if git checkout "$current_branch" 2>/dev/null; then
+      warn "returned to $current_branch"
       _restored_branch=true
+    else
+      warn "could not return to $current_branch — you are on ${_on_branch:-detached HEAD}"
     fi
   else
     _restored_branch=true
