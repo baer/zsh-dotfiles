@@ -184,7 +184,7 @@ fi
 # -- stash (if needed) -----------------------------------------------
 
 did_stash=false
-if git status --porcelain | grep -qv '^??'; then
+if [ -n "$(git status --porcelain)" ]; then
   git stash push -m "git-up: auto-stash from $current_branch" \
     || die "could not stash changes — resolve working tree first"
   did_stash=true
