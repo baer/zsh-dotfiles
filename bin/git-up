@@ -66,7 +66,7 @@ trap _trap_exit EXIT
 
 usage() {
   cat <<'EOF'
-Usage: git up [--rebase] [--interactive] [--before CMD] [--after CMD]
+Usage: git up [--rebase] [--interactive] [--before CMD] [--after CMD] [BRANCH]
 
 Updates the default branch (main/master) from origin, then
 returns to the branch you were on.  Dirty working trees are
@@ -82,6 +82,11 @@ Options:
                         Skipped if no meaningful changes occurred.
   -h                    Show this message.
 
+Arguments:
+  BRANCH                Target branch to rebase onto the updated default
+                        branch. Implies --rebase. You will end up on BRANCH
+                        after the operation completes.
+
 Hook commands are passed to eval — use only with trusted input.
 --before fires when new commits are pulled.
 --after fires when new commits are pulled or rebase moved commits.
@@ -93,6 +98,9 @@ Examples:
   git up --rebase --interactive
   git up --before "make build" --after "yarn install"
   git up -r -b "make" -a "yarn"
+  git up feature-branch
+  git up feature-branch --interactive
+  git up feature-branch -b "make" -a "yarn"
 EOF
   exit 0
 }
@@ -155,7 +163,7 @@ printf 'git-up: updating %s from origin...\n' "$default_branch"
 # -- stash (if needed) -----------------------------------------------
 
 did_stash=false
-if [ -n "$(git status --porcelain)" ]; then
+if git status --porcelain | grep -qv '^??'; then
   git stash push -m "git-up: auto-stash from $current_branch" \
     || die "could not stash changes — resolve working tree first"
   did_stash=true
