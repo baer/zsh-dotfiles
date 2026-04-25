@@ -22,6 +22,8 @@ source "$_ADOPT_SH_DIR/log.sh"
 source "$_ADOPT_SH_DIR/spinner.sh"
 # shellcheck source=brewfile.sh
 source "$_ADOPT_SH_DIR/brewfile.sh"
+# shellcheck source=localrc.sh
+source "$_ADOPT_SH_DIR/localrc.sh"
 
 # ---------------------------------------------------------------------------
 # Primitives
@@ -105,7 +107,6 @@ _trash_app() {
 # Remove a cask from HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc.
 _remove_from_skip_list() {
   local cask="$1"
-  local localrc="$HOME/.localrc"
 
   [[ -z "${HOMEBREW_BUNDLE_CASK_SKIP:-}" ]] && return 0
 
@@ -113,13 +114,10 @@ _remove_from_skip_list() {
   local new_skip
   new_skip="$(echo "$HOMEBREW_BUNDLE_CASK_SKIP" | tr ' ' '\n' | grep -vx "$cask" | tr '\n' ' ' | sed 's/ $//')"
 
-  if [[ -f "$localrc" ]] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
-    if [[ -z "$new_skip" ]]; then
-      # Remove the line entirely
-      sed -i '' '/^export HOMEBREW_BUNDLE_CASK_SKIP=/d' "$localrc"
-    else
-      sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|export HOMEBREW_BUNDLE_CASK_SKIP=\"$new_skip\"|" "$localrc"
-    fi
+  if [[ -z "$new_skip" ]]; then
+    _localrc_unset_managed_var "HOMEBREW_BUNDLE_CASK_SKIP"
+  else
+    _localrc_set_managed_var "HOMEBREW_BUNDLE_CASK_SKIP" "$new_skip"
   fi
 
   export HOMEBREW_BUNDLE_CASK_SKIP="$new_skip"

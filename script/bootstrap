@@ -128,6 +128,17 @@ _on_exit() {
 trap '_on_error' ERR
 trap '_on_exit' EXIT
 
+_check_localrc_setup() {
+  local localrc_script="$DOTFILES_ROOT/script/localrc"
+  [[ -x "$localrc_script" ]] || return 0
+
+  if "$localrc_script" --check >/dev/null 2>&1; then
+    return 0
+  fi
+
+  _ACTIONABLE_WARNINGS+=("local overrides available — run ${_BOLD}script/localrc${_RST}")
+}
+
 # ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
@@ -470,4 +481,5 @@ else
 fi
 
 _current_phase=""
+_check_localrc_setup
 print_completion

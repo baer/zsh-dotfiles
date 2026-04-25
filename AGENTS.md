@@ -18,6 +18,7 @@ Personal zsh dotfiles using topical organization
 ## Commands
 
 - `script/bootstrap` -- idempotent setup and maintenance (symlinks, git config, brew update/upgrade/bundle, topic install scripts)
+- `script/localrc` -- audits and manages repo-owned `~/.localrc` overrides in a reserved block
 - `script/brew-skip-detect` -- detects casks installed outside Homebrew, offers skip or adopt per-app, writes skip list to `~/.localrc`
 - `script/brew-update` -- standalone Homebrew maintenance: update, upgrade, bundle, drift check, vuln check. Flags: `--verbose`, `--skip-upgrade`, `--skip-checks`. Alias: `brewup`
 - `script/brew-audit` -- detects Brewfile drift (installed packages not in Brewfile) and offers to adopt manually installed apps into Homebrew management. Actions: `skip` (this run), `add` (to Brewfile), `remove` (uninstall), `skip-local` (ignore on this machine only), `skip-always` (ignore on all machines)
@@ -60,7 +61,7 @@ The Brewfile is the canonical list of all desired packages. On work machines whe
 
 - **Symlinks are live**: Editing `*.symlink` files changes your active dotfiles immediately (they're symlinked, not copied).
 - **Interactive rebase**: Use `git ri` for interactive rebase (`ri = rebase -i`). Plain `git rebase` is non-interactive.
-- **Private config**: `~/.localrc` is sourced early but git-ignored. Use it for secrets and machine-specific env vars.
+- **Private config**: `~/.localrc` is sourced early but git-ignored. Use `script/localrc` for repo-managed overrides; keep secrets and one-off machine env vars outside the managed block.
 - **`brew bundle --cleanup` is banned**: It triggers Homebrew's autoremove, which can delete packages that ARE in the Brewfile if they were originally installed as dependencies (Homebrew/brew#21350). Use `script/brew-audit` for drift resolution instead. If a converge mode is ever needed, prefix with `HOMEBREW_NO_INSTALL_CLEANUP=1` and test thoroughly.
 - **fsmonitor + Homebrew**: `core.fsmonitor=true` is enabled globally for performance, but disabled in Homebrew tap repos via `includeIf` + `git/gitconfig-homebrew.symlink`. Without this override, fsmonitor daemons inherit Homebrew's update lock FD and permanently block `brew update`. If you see `lockf: already locked` errors, check: `lsof "$(brew --prefix)/var/homebrew/locks/update"`.
 

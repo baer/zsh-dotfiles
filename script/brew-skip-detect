@@ -28,6 +28,8 @@ source "$DOTFILES_ROOT/script/lib/brewfile.sh"
 source "$DOTFILES_ROOT/script/lib/skip-lists.sh"
 # shellcheck source=lib/cask-detect.sh
 source "$DOTFILES_ROOT/script/lib/cask-detect.sh"
+# shellcheck source=lib/localrc.sh
+source "$DOTFILES_ROOT/script/lib/localrc.sh"
 
 # Source localrc to pick up any existing skip list
 # shellcheck disable=SC1091
@@ -191,21 +193,8 @@ fi
 # Deduplicate the skip line
 skip_line="$(echo "$skip_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
-# Write to ~/.localrc
-local localrc="$HOME/.localrc"
-local export_line="export HOMEBREW_BUNDLE_CASK_SKIP=\"$skip_line\""
-
-if [ -f "$localrc" ] && grep -q "HOMEBREW_BUNDLE_CASK_SKIP" "$localrc"; then
-  # Update existing line
-  sed -i '' "s|^export HOMEBREW_BUNDLE_CASK_SKIP=.*|$export_line|" "$localrc"
-  log_success "Updated HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc"
-else
-  # Append
-  echo "" >> "$localrc"
-  echo "# Casks to skip in brew bundle (installed outside Homebrew)" >> "$localrc"
-  echo "$export_line" >> "$localrc"
-  log_success "Added HOMEBREW_BUNDLE_CASK_SKIP to ~/.localrc"
-fi
+_localrc_set_managed_var "HOMEBREW_BUNDLE_CASK_SKIP" "$skip_line"
+log_success "Updated HOMEBREW_BUNDLE_CASK_SKIP in ~/.localrc"
 
 # Export for current session
 export HOMEBREW_BUNDLE_CASK_SKIP="$skip_line"

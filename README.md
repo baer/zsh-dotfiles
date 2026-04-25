@@ -16,6 +16,7 @@ Bootstrap will:
 2. Symlink all `*.symlink` files to `$HOME` (e.g., `zsh/zshrc.symlink` becomes `~/.zshrc`)
 3. On macOS, detect company-managed apps and set up Homebrew cask filtering (see [Work Machines](#work-machines))
 4. Install all Homebrew packages and casks from the `Brewfile` via `brew bundle`
+5. Print a reminder if optional repo-managed `~/.localrc` overrides need review
 
 ## Topical Organization
 
@@ -96,6 +97,7 @@ Git config lives in `git/gitconfig.symlink` with delta as the diff pager and 20+
 - `ee` — Open `$EDITOR` with `--wait` for interactive use
 - `a [-- agent-args...]` — Launch `$AGENT` (defaults to `claude`)
 - `a -d [-- agent-args...]` — Launch `$AGENT` with the harness-specific dangerous-mode flag
+- `script/localrc` — Audit and manage repo-owned `~/.localrc` overrides
 
 ## Day-to-Day
 
@@ -121,7 +123,16 @@ Running `dot` on a work machine without the skip list configured will print a re
 
 ## `~/.localrc`
 
-Machine-specific config that shouldn't be committed goes in `~/.localrc` (git-ignored). It's sourced first in the zsh loading order — use it for secrets, API keys, and the Homebrew cask skip list.
+Machine-specific config that shouldn't be committed goes in `~/.localrc` (git-ignored). It's sourced first in the zsh loading order.
+
+Use `script/localrc` to review or set repo-managed overrides like:
+
+- `EDITOR`
+- `AGENT`
+- XDG base directory overrides
+- Homebrew skip lists
+
+Repo-managed keys live inside a marked block so bootstrap can safely add new defaults later. Keep secrets, tokens, and one-off machine exports outside that managed block.
 
 ## For AI Agents
 

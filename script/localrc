@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+#
+# localrc — audit and manage repo-owned ~/.localrc settings
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+DOTFILES_ROOT=$(pwd -P)
+
+# shellcheck source=lib/term.sh
+source "$DOTFILES_ROOT/script/lib/term.sh"
+# shellcheck source=lib/log.sh
+source "$DOTFILES_ROOT/script/lib/log.sh"
+# shellcheck source=lib/prompt.sh
+source "$DOTFILES_ROOT/script/lib/prompt.sh"
+# shellcheck source=lib/localrc.sh
+source "$DOTFILES_ROOT/script/lib/localrc.sh"
+
+CHECK_ONLY=false
+
+usage() {
+  local code="${1:-0}"
+  cat <<EOF
+Usage: script/localrc [options]
+
+Audit and manage machine-local overrides in ~/.localrc.
+
+Options:
+  --check   Audit only; exit non-zero if recommended setup is missing
+  --help    Show this message
+EOF
+  exit "$code"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check) CHECK_ONLY=true ;;
+    --help) usage ;;
+    *)
+      log_error "Unknown option: $1"
+      usage 1
+      ;;
+  esac
+  shift
+done
+
+LOCALRC_FILE="$(_localrc_path)"
+LOCALRC_VARS=(
+  EDITOR
+  AGENT
+  XDG_CONFIG_HOME
+  XDG_DATA_HOME
+  XDG_CACHE_HOME
+  XDG_STATE_HOME
+  HOMEBREW_BUNDLE_CASK_SKIP
+  HOMEBREW_BUNDLE_MAS_SKIP
+)
+
+_localrc_default_for() {
+  case "$1" in
+    EDITOR) printf '%s\n' "code" ;;
+    AGENT) printf '%s\n' "claude" ;;
+    XDG_CONFIG_HOME) printf '%s\n' "$HOME/.config" ;;
+    XDG_DATA_HOME) printf '%s\n' "$HOME/.local/share" ;;
+    XDG_CACHE_HOME) printf '%s\n' "$HOME/.cache" ;;
+    XDG_STATE_HOME) printf '%s\n' "$HOME/.local/state" ;;
+    *) return 1 ;;
+  esac
+}
+
+_localrc_description_for() {
+  case "$1" in
+    EDITOR) printf '%s\n' "Editor used by e/ee/git helpers" ;;
+    AGENT) printf '%s\n' "Agent CLI launched by bin/a" ;;
+    XDG_CONFIG_HOME) printf '%s\n' "Base directory for config files" ;;
+    XDG_DATA_HOME) printf '%s\n' "Base directory for local app data" ;;
+    XDG_CACHE_HOME) printf '%s\n' "Base directory for caches" ;;
+    XDG_STATE_HOME) printf '%s\n' "Base directory for local state" ;;
+    HOMEBREW_BUNDLE_CASK_SKIP) printf '%s\n' "Homebrew casks to skip on this machine" ;;
+    HOMEBREW_BUNDLE_MAS_SKIP) printf '%s\n' "Mac App Store IDs to skip on this machine" ;;
+  esac
+}
+
+_localrc_should_prompt() {
+  [[ "$1" == "EDITOR" || "$1" == "AGENT" ]]
+}
+
+_localrc_is_auto_managed() {
+  [[ "$1" == "HOMEBREW_BUNDLE_CASK_SKIP" || "$1" == "HOMEBREW_BUNDLE_MAS_SKIP" ]]
+}
+
+_localrc_current_value() {
+  local var="$1"
+  printf '%s' "${!var:-}"
+}
+
+_localrc_print_status() {
+  local var="$1" status="$2" detail="$3"
+  local desc
+  desc="$(_localrc_description_for "$var")"
+  printf "  %s %-26s %s" "$status" "$var" "$desc"
+  [[ -n "$detail" ]] && printf " ${_DIM}(%s)${_RST}" "$detail"
+  printf "\n"
+}
+
+_localrc_prompt_for_value() {
+  local var="$1" current="$2" default="$3"
+  local choice answer
+
+  choice="$(prompt_choice "$var" "Set now" "Skip for now")"
+  printf "\n"
+  [[ "$choice" == "1" ]] || return 1
+
+  answer="$(prompt_user "$(_localrc_description_for "$var")" "${current:-$default}")"
+  printf "\n"
+  printf '%s' "$answer"
+}
+
+audit_failed=false
+changes_made=0
+configured_now=0
+
+if ! $CHECK_ONLY; then
+  printf "\n  ${_BOLD}localrc${_RST}\n\n"
+  log_info "Reviewing repo-managed overrides in ${LOCALRC_FILE/#$HOME/~}"
+fi
+
+for var in "${LOCALRC_VARS[@]}"; do
+  managed_value="$(_localrc_get_managed_value "$var" "$LOCALRC_FILE" 2>/dev/null || true)"
+  unmanaged_value="$(_localrc_get_unmanaged_value "$var" "$LOCALRC_FILE" 2>/dev/null || true)"
+  current_value="$(_localrc_current_value "$var")"
+  default_value="$(_localrc_default_for "$var" 2>/dev/null || true)"
+
+  if [[ -n "$managed_value" && -n "$unmanaged_value" ]]; then
+    audit_failed=true
+    _localrc_print_status "$var" "$_WARN" "managed block plus manual export"
+    continue
+  fi
+
+  if [[ -n "$managed_value" ]]; then
+    _localrc_print_status "$var" "$_CHECK" "$managed_value"
+    continue
+  fi
+
+  if [[ -n "$unmanaged_value" ]]; then
+    audit_failed=true
+    _localrc_print_status "$var" "$_WARN" "manual export outside managed block"
+    continue
+  fi
+
+  if _localrc_is_auto_managed "$var" && [[ -n "$current_value" ]] && ! $CHECK_ONLY; then
+    _localrc_set_managed_var "$var" "$current_value" "$LOCALRC_FILE"
+    changes_made=$((changes_made + 1))
+    configured_now=$((configured_now + 1))
+    _localrc_print_status "$var" "$_CHECK" "$current_value"
+    continue
+  fi
+
+  if _localrc_should_prompt "$var"; then
+    if $CHECK_ONLY; then
+      audit_failed=true
+      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+      continue
+    fi
+
+    if [[ "$INTERACTIVE" == true ]]; then
+      prompted_value="$(_localrc_prompt_for_value "$var" "$current_value" "$default_value" || true)"
+      if [[ -n "$prompted_value" ]]; then
+        _localrc_set_managed_var "$var" "$prompted_value" "$LOCALRC_FILE"
+        changes_made=$((changes_made + 1))
+        configured_now=$((configured_now + 1))
+        _localrc_print_status "$var" "$_CHECK" "$prompted_value"
+      else
+        audit_failed=true
+        _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+      fi
+    else
+      audit_failed=true
+      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+    fi
+    continue
+  fi
+
+  if [[ -n "$default_value" ]]; then
+    _localrc_print_status "$var" "$_INFO" "repo default $default_value"
+  else
+    _localrc_print_status "$var" "$_INFO" "not set"
+  fi
+done
+
+if $CHECK_ONLY; then
+  $audit_failed && exit 1
+  exit 0
+fi
+
+printf "\n"
+
+if [[ "$changes_made" -gt 0 ]]; then
+  log_success "Updated ${LOCALRC_FILE/#$HOME/~} ($configured_now managed override(s))"
+  log_info "Keep secrets and machine-specific exports outside the managed block"
+elif $audit_failed; then
+  log_warn "No changes made"
+  log_info "Run script/localrc again after moving manual exports into the managed block"
+else
+  log_success "Managed overrides already in good shape"
+fi
