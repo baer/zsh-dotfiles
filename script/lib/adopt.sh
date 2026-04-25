@@ -129,6 +129,15 @@ _remove_from_skip_list() {
 # Full adoption flow
 # ---------------------------------------------------------------------------
 
+# Warm the sudo timestamp before running `brew --adopt` behind a spinner.
+# Homebrew may need sudo to fix app permissions during adoption.
+_prewarm_adopt_sudo() {
+  sudo -n true >/dev/null 2>&1 && return 0
+
+  log_info "Adopting $1 may require your macOS password."
+  sudo -v
+}
+
 # Adopt a manually installed app into brew management.
 # Trashes the manual copy, runs brew install, updates Brewfile and skip list.
 # Requires LOGFILE and BREWFILE to be set by the caller.
@@ -140,10 +149,16 @@ _adopt_cask() {
 
   # Fast path: --adopt claims existing artifacts without trash/reinstall
   local adopt_output adopt_rc
-  spinner_start "brew install --cask --adopt $cask"
-  adopt_output="$(brew install --cask --adopt "$cask" 2>&1)"
-  adopt_rc=$?
-  echo "$adopt_output" >> "$LOGFILE"
+  if _prewarm_adopt_sudo "$app_name" >> "$LOGFILE" 2>&1; then
+    spinner_start "brew install --cask --adopt $cask"
+    adopt_output="$(brew install --cask --adopt "$cask" 2>&1)"
+    adopt_rc=$?
+    echo "$adopt_output" >> "$LOGFILE"
+  else
+    adopt_output="sudo preflight failed before brew install --cask --adopt $cask"
+    adopt_rc=1
+    echo "$adopt_output" >> "$LOGFILE"
+  fi
   if (( adopt_rc == 0 )); then
     spinner_stop ok "brew install --cask --adopt $cask"
   else
