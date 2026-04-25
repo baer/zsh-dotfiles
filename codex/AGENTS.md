@@ -1,4 +1,4 @@
-# Personal Claude Code Instructions
+# Personal Codex Instructions
 
 ## Git Commits
 

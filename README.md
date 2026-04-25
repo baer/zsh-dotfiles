@@ -23,7 +23,7 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 
 ### Current Topics
 
-`atuin` `bin` `claude` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
+`atuin` `bin` `claude` `codex` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
 
 ### Infrastructure (not topics)
 
