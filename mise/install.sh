@@ -2,19 +2,23 @@
 # Symlink mise config to XDG location
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 dir="$(cd "$(dirname "$0")" && pwd)"
+src="$dir/config.toml"
+dst="$config_home/mise/config.toml"
 
 mkdir -p "$config_home/mise"
 
-if [ -f "$config_home/mise/config.toml" ] && [ ! -L "$config_home/mise/config.toml" ]; then
-  mv "$config_home/mise/config.toml" "$config_home/mise/config.toml.backup"
-  echo "  Backed up existing mise config to $config_home/mise/config.toml.backup"
-fi
+if [ ! -L "$dst" ] || [ "$(readlink "$dst")" != "$src" ]; then
+  if [ -f "$dst" ] && [ ! -L "$dst" ]; then
+    mv "$dst" "$dst.backup"
+    echo "  Backed up existing mise config to $dst.backup"
+  fi
 
-ln -sf "$dir/config.toml" "$config_home/mise/config.toml"
-echo "  Linked mise config"
+  ln -sf "$src" "$dst"
+  echo "  Linked mise config"
+fi
 
 # Trust and install tools if mise is available
 if command -v mise >/dev/null 2>&1; then
-  mise trust "$config_home/mise/config.toml"
+  mise trust "$dst"
   mise install --yes
 fi
