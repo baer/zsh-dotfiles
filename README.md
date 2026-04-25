@@ -23,7 +23,7 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 
 ### Current Topics
 
-`atuin` `bin` `claude` `editors` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
+`atuin` `bin` `claude` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
 
 ### Infrastructure (not topics)
 
@@ -94,7 +94,8 @@ Git config lives in `git/gitconfig.symlink` with delta as the diff pager and 20+
 - `dot -e` — Open the dotfiles directory in your editor
 - `e [path]` — Open a file or directory in `$EDITOR` (defaults to current dir)
 - `ee` — Open `$EDITOR` with `--wait` for interactive use
-- `a` — Launch Claude Code
+- `a [-- agent-args...]` — Launch `$AGENT` (defaults to `claude`)
+- `a -d [-- agent-args...]` — Launch `$AGENT` with the harness-specific dangerous-mode flag
 
 ## Day-to-Day
 

@@ -11,7 +11,7 @@ Personal zsh dotfiles using topical organization
 3. `*/*.zsh` (excluding path.zsh and completion.zsh) -- alphabetical by directory, then filename
 4. `*/completion.zsh` -- loaded after `compinit`
 
-**Alphabetical ordering is load-bearing.** Topics load by directory name, so `system/` always loads after `editors/`. If two topics set the same variable, the later directory wins.
+**Alphabetical ordering is load-bearing.** Topics load by directory name, so later directories win if two topics set the same variable.
 
 **Platform helpers** (`is_macos`, `is_linux`) are defined in `system/_platform.zsh` and available during the `*.zsh` pass (step 3). They are NOT available during the `path.zsh` pass (step 2) — use inline `[[ "$(uname -s)" == "Darwin" ]]` guards in path files.
 

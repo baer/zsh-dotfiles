@@ -1,12 +1,83 @@
 #!/bin/sh
 #
-# Quick shortcut to ~*-~*AI*~-*~
+# Quick shortcut to your selected agent CLI.
 #
-# Load up a current $HotThing AI client with preferable settings (which is
-# usually yolo-lfg style anyway; computers wouldn't do anything to us).
+# Uses $AGENT like `e` uses $EDITOR. Agent-specific behavior stays limited to
+# translating `-d` into the right "dangerously skip permissions" flag.
 #
 # USAGE:
 #
 #   $ a
-#   # => opens the AI client. yeah, easy peasy.
-claude --dangerously-skip-permissions
+#   # => launches $AGENT
+#
+#   $ a -d
+#   # => launches $AGENT with the mapped dangerous-mode flag
+#
+#   $ a -- --help
+#   # => passes --help through to $AGENT
+
+usage() {
+  cat <<EOF
+Usage: a [-d] [-- agent-args...]
+
+Launches \$AGENT (default: claude).
+
+Options:
+  -d    enable dangerous mode for supported agents
+  -h    show this help
+
+Environment:
+  AGENT                 executable to launch
+  AGENT_DANGEROUS_FLAG  override dangerous-mode flag for unknown agents
+EOF
+}
+
+dangerous=0
+
+while getopts "dh" opt; do
+  case "$opt" in
+    d) dangerous=1 ;;
+    h)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+shift $((OPTIND - 1))
+
+agent_cmd="${AGENT:-claude}"
+agent_name="${agent_cmd##*/}"
+
+case "$agent_name" in
+  claude)
+    dangerous_flag='--dangerously-skip-permissions'
+    ;;
+  codex)
+    dangerous_flag='--dangerously-bypass-approvals-and-sandbox'
+    ;;
+  *)
+    dangerous_flag="${AGENT_DANGEROUS_FLAG:-}"
+    ;;
+esac
+
+if ! command -v "$agent_cmd" >/dev/null 2>&1; then
+  printf 'a: agent command not found: %s\n' "$agent_cmd" >&2
+  exit 1
+fi
+
+if [ "$dangerous" -eq 1 ]; then
+  if [ -z "$dangerous_flag" ]; then
+    printf '%s\n' \
+      "a: no dangerous-mode flag mapping for AGENT=$agent_cmd; set AGENT_DANGEROUS_FLAG to override" >&2
+    exit 1
+  fi
+
+  exec "$agent_cmd" "$dangerous_flag" "$@"
+fi
+
+exec "$agent_cmd" "$@"

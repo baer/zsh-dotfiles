@@ -2,4 +2,5 @@
 bun = "latest"
 node = ["lts", "latest"]
 pnpm = "latest"
+wranger = "latest"
 yarn = "latest"

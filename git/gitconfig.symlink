@@ -18,7 +18,7 @@
         # Staging & committing
         a     = add -A
         c     = commit
-        ac    = "!f() { git add -A && git commit -m \"$*\"; }; f"
+        ac    = "!f() { test -n \"$1\" || { echo 'usage: git ac \"message\"' >&2; exit 1; }; git add -A && git commit -m \"$1\"; }; f"
         amend = commit --amend --no-edit
         fixup = commit --fixup
 
