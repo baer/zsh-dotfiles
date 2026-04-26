@@ -278,7 +278,13 @@ _render_triage() {
 
   while IFS=$'\t' read -r action pkg typ extra; do
     case "$action" in
-      add)         printf '\033[32m[add]        \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
+      add)
+        if [[ "$typ" == "adopt" ]]; then
+          printf '\033[32m[adopt]      \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ"
+        else
+          printf '\033[32m[add]        \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ"
+        fi
+        ;;
       remove)      printf '\033[31m[remove]     \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
       skip-local)  printf '\033[33m[skip-local] \033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
       skip-always) printf '\033[90m[skip-always]\033[0m %-*s %s\n' "$_col_w" "$pkg" "$typ" ;;
@@ -287,8 +293,15 @@ _render_triage() {
   done < "$_STATE_FILE"
 }
 
-# Cycle action forward or backward for a given line (0-based from fzf {n})
-# Order: skip → add → remove → skip-local → skip-always → skip
+# Action meanings:
+#   add         record a brew-managed item in the Brewfile
+#   adopt       record a manually installed app in the Brewfile under Homebrew
+#   remove      remove the item from this machine (brew uninstall or app to Trash)
+#   skip-local  ignore on this machine only via ~/.brew-audit-ignore-local
+#   skip-always ignore on all machines via the repo-owned ignore file
+#
+# Cycle action forward or backward for a given line (0-based from fzf {n}).
+# Order: skip -> add -> remove -> skip-local -> skip-always -> skip.
 # Skips 'remove' for mas items automatically.
 _cycle_action() {
   local line_num="$1" direction="$2"
@@ -350,7 +363,7 @@ _fzf_rc=0
 _render_triage | fzf --ansi --no-sort --reverse \
   --disabled --no-info --prompt "" \
   --bind 'start:hide-input' \
-  --header $'←/→ change action   ↑/↓ navigate   enter confirm   esc quit' \
+  --header $'Actions\n  add          Add installed brew item to Brewfile\n  adopt        Put app under Homebrew management\n  remove       Uninstall, or move app to Trash\n  skip-local   Ignore on this Mac\n  skip-always  Ignore on every machine\n\nKeys: ←/→ change action   ↑/↓ navigate   enter confirm   esc quit' \
   --header-first \
   --track --id-nth=2 \
   --bind "right:execute-silent(_cycle_action {n} forward)+reload(_render_triage)" \
@@ -384,7 +397,7 @@ while IFS=$'\t' read -r action pkg typ extra; do
         _add_items+=("$pkg"$'\t'"$typ"$'\t'"$extra")
       fi
       ;;
-    remove)      _remove_items+=("$pkg"$'\t'"$typ") ;;
+    remove)      _remove_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
     skip-local)  _skip_local_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
     skip-always) _skip_always_items+=("$pkg"$'\t'"$typ"$'\t'"$extra") ;;
     skip)        _skip_items+=("$pkg") ;;
@@ -407,6 +420,7 @@ if [[ ${#_remove_items[@]} -gt 0 ]]; then
   _names=()
   for item in "${_remove_items[@]}"; do _names+=("${item%%$'\t'*}"); done
   printf "  ${_RED}Remove (%d):${_RST}       %s\n" "${#_remove_items[@]}" "$(IFS=', '; echo "${_names[*]}")"
+  printf "  ${_DIM}Remove affects this Mac only: brew items are uninstalled; adoptable apps move to Trash.${_RST}\n"
 fi
 if [[ ${#_skip_local_items[@]} -gt 0 ]]; then
   _names=()
@@ -461,15 +475,22 @@ done
 
 # Execute: Removals (formulae & casks first, taps last)
 for item in "${_remove_items[@]}"; do
-  IFS=$'\t' read -r pkg typ <<< "$item"
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
   [[ "$typ" == "formula" ]] && _remove_formula "$pkg"
 done
 for item in "${_remove_items[@]}"; do
-  IFS=$'\t' read -r pkg typ <<< "$item"
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
   [[ "$typ" == "cask" ]] && _remove_cask "$pkg"
 done
 for item in "${_remove_items[@]}"; do
-  IFS=$'\t' read -r pkg typ <<< "$item"
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
+  if [[ "$typ" == "adopt" ]]; then
+    cask_name="${pkg##* -> }"
+    _remove_adoptable_cask "$cask_name" "$extra" || true
+  fi
+done
+for item in "${_remove_items[@]}"; do
+  IFS=$'\t' read -r pkg typ extra <<< "$item"
   [[ "$typ" == "tap" ]] && _remove_tap "$pkg"
 done
 

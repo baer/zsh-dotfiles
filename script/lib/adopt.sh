@@ -6,7 +6,7 @@
 # Depends on: lib/term.sh, lib/log.sh, lib/spinner.sh, lib/brewfile.sh
 # Requires LOGFILE and BREWFILE to be set by the caller.
 # Provides _app_is_running, _prompt_quit_app, _trash_app,
-#          _remove_from_skip_list, _adopt_cask.
+#          _remove_adoptable_cask, _remove_from_skip_list, _adopt_cask.
 
 # Source guard
 [[ -n "${_ADOPT_SH_LOADED:-}" ]] && return 0 2>/dev/null || true
@@ -100,6 +100,32 @@ _trash_app() {
   return 1
 }
 
+# Remove a manually installed adoptable cask app from this machine.
+# This does not edit the Brewfile; adoptable apps are not in the Brewfile yet.
+# Args: cask_name app_name
+_remove_adoptable_cask() {
+  local cask="$1" app_name="$2"
+  local app_path="${CASK_APPDIR:-/Applications}/$app_name"
+  local app_base="${app_name%.app}"
+
+  if [[ "$app_name" != *.app ]]; then
+    log_warn "Cannot auto-remove package-based install for $cask"
+    return 1
+  fi
+
+  if _app_is_running "$app_base"; then
+    _prompt_quit_app "$app_base" || { log_info "Skipped $cask"; return 1; }
+  fi
+
+  if _trash_app "$app_path"; then
+    log_success "Moved $app_name to Trash"
+    return 0
+  fi
+
+  log_info "Skipped $cask"
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 # Skip list management
 # ---------------------------------------------------------------------------
@@ -142,7 +168,7 @@ _prewarm_adopt_sudo() {
 # Args: cask_name app_name
 _adopt_cask() {
   local cask="$1" app_name="$2"
-  local app_path="/Applications/$app_name"
+  local app_path="${CASK_APPDIR:-/Applications}/$app_name"
   local app_base="${app_name%.app}"
 
   # Fast path: --adopt claims existing artifacts without trash/reinstall
