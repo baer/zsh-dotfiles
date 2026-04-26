@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# git-pristine — reset tracked files and remove untracked files. Run 'git pristine -h'.
+
+set -euo pipefail
+
+# -- helpers ---------------------------------------------------------
+
+die()  { printf 'git-pristine: %s\n' "$1" >&2; exit 1; }
+warn() { printf 'git-pristine: %s\n' "$1" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: git pristine [--force] [--ignored] [--exclude PATTERN]... [--dry-run]
+
+Resets tracked files to HEAD and removes untracked files/directories.
+Ignored files are preserved unless --ignored is passed.
+Exclude patterns are passed to git clean -e and only affect files removed by
+git clean. Tracked files are always reset to HEAD.
+
+Options:
+  --force, -f          Run without prompting.
+  --ignored, -x        Also remove ignored files.
+  --exclude, -e PATTERN
+                       Preserve an untracked path or clean pattern.
+                       May be repeated.
+  --keep, -k PATTERN   Friendly alias for --exclude.
+  --dry-run, -n        Preview only; do not reset or clean.
+  -h                   Show this message.
+
+Examples:
+  git pristine --dry-run
+  git pristine
+  git pristine -f
+  git pristine -fx
+  git pristine -fnx
+  git pristine -f --ignored
+  git pristine -f --exclude .env
+  git pristine -f --exclude 'tmp/cache/**'
+  git pristine -fx --exclude '.env*' --exclude 'node_modules/.cache/**'
+EOF
+  exit 0
+}
+
+parse_short_cluster() {
+  local cluster char i
+
+  cluster=${1#-}
+  for ((i = 0; i < ${#cluster}; i++)); do
+    char=${cluster:i:1}
+    case "$char" in
+      h) usage ;;
+      f) force=true ;;
+      n) dry_run=true ;;
+      x) clean_mode="-dfx"; clean_preview_mode="-ndx" ;;
+      k|e) die "option -$char requires a separate pattern argument; use -$char PATTERN or --exclude=PATTERN" ;;
+      *) die "unknown option: -$char (see git pristine -h)" ;;
+    esac
+  done
+}
+
+print_status() {
+  local status
+
+  status=$(git status --short --untracked-files=all)
+  if [ -n "$status" ]; then
+    printf '%s\n' "$status"
+  else
+    printf '  <no tracked or untracked changes>\n'
+  fi
+}
+
+print_clean_preview() {
+  local preview
+
+  preview=$(git clean "${clean_preview_args[@]}" 2>/dev/null || true)
+  if [ -n "$preview" ]; then
+    printf '%s\n' "$preview"
+  else
+    printf '  <no files would be removed>\n'
+  fi
+}
+
+has_work_to_do() {
+  local status
+
+  status=$(git status --porcelain --untracked-files=all)
+  if [ -n "$status" ] && printf '%s\n' "$status" | grep -qv '^??'; then
+    return 0
+  fi
+  [ -n "$(git clean "${clean_preview_args[@]}" 2>/dev/null || true)" ] && return 0
+  return 1
+}
+
+git_operation_states() {
+  local states=()
+
+  [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ] \
+    && states+=("rebase")
+  [ -f "$(git rev-parse --git-path MERGE_HEAD)" ] && states+=("merge")
+  [ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD)" ] && states+=("cherry-pick")
+  [ -f "$(git rev-parse --git-path REVERT_HEAD)" ] && states+=("revert")
+
+  [ "${#states[@]}" -eq 0 ] && return 0
+  printf '%s\n' "${states[@]}"
+}
+
+print_operation_states() {
+  [ "${#operation_states[@]}" -eq 0 ] && return 0
+
+  printf 'git-pristine: in-progress operation:\n'
+  printf '%s\n' "${operation_states[@]}" | sed 's/^/  /'
+}
+
+abort_rebase_if_needed() {
+  local state
+
+  for state in "${operation_states[@]}"; do
+    if [ "$state" = "rebase" ]; then
+      git rebase --abort >/dev/null 2>&1 || die "failed to abort in-progress rebase"
+      return 0
+    fi
+  done
+}
+
+# -- parse flags -----------------------------------------------------
+
+force=false
+dry_run=false
+clean_mode="-df"
+clean_preview_mode="-nd"
+keep_patterns=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)       usage ;;
+    -f|--force)      force=true; shift ;;
+    -x|--ignored)    clean_mode="-dfx"; clean_preview_mode="-ndx"; shift ;;
+    -n|--dry-run)    dry_run=true; shift ;;
+    -k|--keep|-e|--exclude)
+                     [ -n "${2:-}" ] || die "$1 requires a pattern argument"
+                     keep_patterns+=("$2"); shift 2 ;;
+    --keep=*)        keep_patterns+=("${1#--keep=}"); shift ;;
+    --exclude=*)     keep_patterns+=("${1#--exclude=}"); shift ;;
+    --*)             die "unknown option: $1 (see git pristine -h)" ;;
+    -*)              parse_short_cluster "$1"; shift ;;
+    *)               die "unexpected argument: $1 (see git pristine -h)" ;;
+  esac
+done
+
+clean_args=("$clean_mode")
+clean_preview_args=("$clean_preview_mode")
+for keep_pattern in "${keep_patterns[@]}"; do
+  clean_args+=(-e "$keep_pattern")
+  clean_preview_args+=(-e "$keep_pattern")
+done
+
+# -- preflight -------------------------------------------------------
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  || die "not inside a git worktree"
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null || printf 'detached HEAD at %s' "$(git rev-parse --short HEAD)")
+operation_states=()
+while IFS= read -r operation_state; do
+  operation_states+=("$operation_state")
+done < <(git_operation_states)
+
+if ! has_work_to_do; then
+  printf 'git-pristine: already pristine\n'
+  exit 0
+fi
+
+# -- preview ---------------------------------------------------------
+
+printf 'git-pristine: repository: %s\n' "$root"
+printf 'git-pristine: ref: %s\n' "$branch"
+print_operation_states
+printf 'git-pristine: status:\n'
+print_status | sed 's/^/  /'
+if [ "$clean_mode" = "-dfx" ]; then
+  printf 'git-pristine: clean mode: untracked and ignored files included\n'
+else
+  printf 'git-pristine: clean mode: untracked files only; ignored files preserved\n'
+fi
+printf 'git-pristine: keep/exclude patterns:\n'
+if [ "${#keep_patterns[@]}" -gt 0 ]; then
+  printf '%s\n' "${keep_patterns[@]}" | sed 's/^/  /'
+else
+  printf '  <none>\n'
+fi
+printf '  (patterns are passed to git clean -e; tracked files are still reset by git reset --hard)\n'
+printf 'git-pristine: clean preview:\n'
+print_clean_preview | sed 's/^/  /'
+
+if $dry_run; then
+  warn "dry run only; no changes made"
+  exit 0
+fi
+
+if ! $force; then
+  if [ ! -t 0 ]; then
+    die "refusing to prompt because stdin is not a TTY; rerun with --force to discard changes"
+  fi
+
+  if [ "${#operation_states[@]}" -gt 0 ]; then
+    printf 'git-pristine: discard tracked changes, remove untracked files, and discard the in-progress operation state? [y/N] '
+  else
+    printf 'git-pristine: discard tracked changes and remove untracked files? [y/N] '
+  fi
+  IFS= read -r reply
+  case "$reply" in
+    y|Y|yes|YES) ;;
+    *) die "aborted" ;;
+  esac
+elif [ "${#operation_states[@]}" -gt 0 ]; then
+  warn "force mode: discarding in-progress operation state: ${operation_states[*]}"
+fi
+
+# -- reset and clean -------------------------------------------------
+
+abort_rebase_if_needed
+git reset --hard HEAD
+git clean "${clean_args[@]}"
+
+printf 'git-pristine: reset tracked files and removed untracked files\n'
