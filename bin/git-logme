@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # git-logme — show your commits across all git identities. Run 'git logme -h'.
 
-set -e
+set -euo pipefail
 
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 
 # -- helpers ---------------------------------------------------------
 
-die()  { printf 'git-logme: %s\n' "$1" >&2; exit 1; }
-warn() { printf 'git-logme: %s\n' "$1" >&2; }
+die() { printf 'git-logme: %s\n' "$1" >&2; exit 1; }
 
 # -- color detection ------------------------------------------------
 
-if [ -n "$NO_COLOR" ] || [ ! -t 1 ]; then
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
   color_flag="--no-color"
 else
   color_flag="--color"
@@ -21,17 +20,20 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: git logme [--list] [--today] [--week] [--month] [<git-log-options>]
+Usage: git logme [--list] [--today|--week|--month|--days <n>] [<git-log-options>]
 
-Shows your commits across all your configured git identities.
+Shows your commits in the current repo across all your configured git identities.
 Discovers user.name and user.email from your global, conditional
 include, and repo-local git configs automatically.
 
-Options:
+Custom options:
   --list, -l              Show discovered identities and exit.
   --today, -t             Commits since midnight.
   --week, -w              Commits from the last 7 days.
   --month, -m             Commits from the last 30 days.
+  --days <n>              Commits from the last n days.
+  --no-merges             Exclude merge commits.
+  --author-date           Show author date in the default compact format.
   -h                      Show this message.
 
 All other arguments are forwarded to git log.
@@ -43,8 +45,11 @@ to override.
 Examples:
   git logme
   git logme --today
+  git logme --days 3 --no-merges
+  git logme --author-date
   git logme --week --stat
   git logme --list
+  git logme --format='%h %an %s'
   git logme --since="2025-01-01" --oneline
 EOF
   exit 0
@@ -66,45 +71,116 @@ extract_identities() {
   done < <(git config --file "$file" --get-all user.email 2>/dev/null || true)
 }
 
+display_path() {
+  local path="$1"
+  printf '%s\n' "${path/#$HOME/\~}"
+}
+
+resolve_include_path() {
+  local include_path="$1" base_dir="$2"
+
+  include_path="${include_path/#\~/$HOME}"
+  case "$include_path" in
+    /*) printf '%s\n' "$include_path" ;;
+    *)  printf '%s\n' "$base_dir/$include_path" ;;
+  esac
+}
+
+scan_config_file() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+
+  local resolved_dir resolved_file
+  resolved_dir="$(cd "$(dirname "$file")" && pwd -P)"
+  resolved_file="$resolved_dir/$(basename "$file")"
+
+  case "$scanned_config_files" in
+    *"
+$resolved_file
+"*) return 0 ;;
+  esac
+  scanned_config_files="${scanned_config_files}${resolved_file}
+"
+
+  extract_identities "$resolved_file" "$(display_path "$resolved_file")"
+
+  local line include_path
+  while IFS= read -r line; do
+    include_path="${line#* }"
+    include_path="$(resolve_include_path "$include_path" "$resolved_dir")"
+    scan_config_file "$include_path"
+  done < <(git config --file "$resolved_file" --get-regexp '^include(if)?\.(.+\.)?path$' 2>/dev/null || true)
+}
+
+set_range() {
+  local name="$1" value="$2"
+  if [ -n "$range_name" ]; then
+    die "conflicting range flags: --$range_name and --$name"
+  fi
+  range_name="$name"
+  since_filter="$value"
+}
+
 # -- parse flags -----------------------------------------------------
 
 list_mode=false
+range_name=""
 since_filter=""
+no_merges=false
+date_placeholder="%cd"
 passthrough_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -h)              usage ;;
     --list|-l)       list_mode=true; shift ;;
-    --today|-t)      since_filter="00:00"; shift ;;
-    --week|-w)       since_filter="1 week ago"; shift ;;
-    --month|-m)      since_filter="1 month ago"; shift ;;
+    --today|-t)      set_range "today" "00:00"; shift ;;
+    --week|-w)       set_range "week" "1 week ago"; shift ;;
+    --month|-m)      set_range "month" "1 month ago"; shift ;;
+    --days)
+      [ $# -ge 2 ] || die "--days requires a number"
+      case "$2" in
+        ''|*[!0-9]*) die "--days requires a positive integer" ;;
+      esac
+      [ "$2" -ge 1 ] || die "--days must be at least 1"
+      set_range "days" "$2 days ago"
+      shift 2
+      ;;
+    --days=*)
+      days="${1#--days=}"
+      case "$days" in
+        ''|*[!0-9]*) die "--days requires a positive integer" ;;
+      esac
+      [ "$days" -ge 1 ] || die "--days must be at least 1"
+      set_range "days" "$days days ago"
+      shift
+      ;;
+    --no-merges)     no_merges=true; shift ;;
+    --author-date)   date_placeholder="%ad"; shift ;;
     *)               passthrough_args+=("$1"); shift ;;
   esac
 done
 
 # -- collect identities ------------------------------------------------
 
-# 1. Global config
-global_config="$(git config --global --list --show-origin 2>/dev/null \
-  | head -1 | cut -f1 | sed 's/^file://')" || true
+# 1. Global config and included config files.
+scanned_config_files="
+"
 
-if [ -n "$global_config" ] && [ -f "$global_config" ]; then
-  global_label="${global_config/#$HOME/\~}"
-  extract_identities "$global_config" "$global_label"
-
-  # 2. All include / includeIf paths referenced in the global config.
-  while IFS= read -r line; do
-    path="${line#* }"
-    path="${path/#\~/$HOME}"
-    if [ -f "$path" ]; then
-      path_label="${path/#$HOME/\~}"
-      extract_identities "$path" "$path_label"
-    fi
-  done < <(git config --file "$global_config" --get-regexp '^include(if)?\.(.+\.)?path$' 2>/dev/null || true)
+if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then
+  scan_config_file "$GIT_CONFIG_GLOBAL"
+else
+  while IFS= read -r origin; do
+    origin="${origin#file:}"
+    scan_config_file "$origin"
+  done < <(
+    git config --global --list --show-origin 2>/dev/null \
+      | awk '$1 ~ /^file:/ { print $1 }' \
+      | sort -u
+  )
 fi
 
-# 3. Repo-local config (if inside a git repo)
+# 2. Repo-local config (if inside a git repo)
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   extract_identities "$(git rev-parse --git-dir)/config" ".git/config"
 fi
@@ -153,12 +229,16 @@ if [ -n "$since_filter" ]; then
   log_args+=(--since="$since_filter")
 fi
 
+if $no_merges; then
+  log_args+=(--no-merges)
+fi
+
 # Always respect NO_COLOR / pipe detection
 log_args+=("$color_flag")
 
 # Default format when no format flags given
 if ! $has_format_flag; then
-  log_args+=("--format=%C(auto)%h %C(blue)%ad %C(auto)%s%C(dim)%d" --date=relative)
+  log_args+=("--format=%C(auto)%h %C(blue)$date_placeholder %C(auto)%s%C(dim)%d" --date=relative)
 fi
 
 # User pass-through args
