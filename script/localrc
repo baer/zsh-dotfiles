@@ -47,6 +47,7 @@ done
 LOCALRC_FILE="$(_localrc_path)"
 LOCALRC_VARS=(
   EDITOR
+  E_EDITOR
   AGENT
   XDG_CONFIG_HOME
   XDG_DATA_HOME
@@ -58,7 +59,8 @@ LOCALRC_VARS=(
 
 _localrc_default_for() {
   case "$1" in
-    EDITOR) printf '%s\n' "code" ;;
+    EDITOR) printf '%s\n' "hx" ;;
+    E_EDITOR) printf '%s\n' "code" ;;
     AGENT) printf '%s\n' "claude" ;;
     XDG_CONFIG_HOME) printf '%s\n' "$HOME/.config" ;;
     XDG_DATA_HOME) printf '%s\n' "$HOME/.local/share" ;;
@@ -70,7 +72,8 @@ _localrc_default_for() {
 
 _localrc_description_for() {
   case "$1" in
-    EDITOR) printf '%s\n' "Editor used by e/ee/git helpers" ;;
+    EDITOR) printf '%s\n' "Terminal editor used by Git and shell tools" ;;
+    E_EDITOR) printf '%s\n' "GUI/project editor launched by e" ;;
     AGENT) printf '%s\n' "Agent CLI launched by bin/a" ;;
     XDG_CONFIG_HOME) printf '%s\n' "Base directory for config files" ;;
     XDG_DATA_HOME) printf '%s\n' "Base directory for local app data" ;;
@@ -82,7 +85,7 @@ _localrc_description_for() {
 }
 
 _localrc_should_prompt() {
-  [[ "$1" == "EDITOR" || "$1" == "AGENT" ]]
+  [[ "$1" == "EDITOR" || "$1" == "E_EDITOR" || "$1" == "AGENT" ]]
 }
 
 _localrc_is_auto_managed() {
@@ -101,6 +104,16 @@ _localrc_print_status() {
   printf "  %s %-26s %s" "$status" "$var" "$desc"
   [[ -n "$detail" ]] && printf " ${_DIM}(%s)${_RST}" "$detail"
   printf "\n"
+}
+
+_localrc_missing_detail() {
+  local current="$1" default="$2"
+
+  if [[ -n "$current" && "$current" != "$default" ]]; then
+    printf 'using current value %s; repo default %s' "$current" "$default"
+  else
+    printf 'using repo default %s' "${current:-$default}"
+  fi
 }
 
 _localrc_prompt_for_value() {
@@ -159,7 +172,7 @@ for var in "${LOCALRC_VARS[@]}"; do
   if _localrc_should_prompt "$var"; then
     if $CHECK_ONLY; then
       audit_failed=true
-      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+      _localrc_print_status "$var" "$_WARN" "$(_localrc_missing_detail "$current_value" "$default_value")"
       continue
     fi
 
@@ -172,11 +185,11 @@ for var in "${LOCALRC_VARS[@]}"; do
         _localrc_print_status "$var" "$_CHECK" "$prompted_value"
       else
         audit_failed=true
-        _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+        _localrc_print_status "$var" "$_WARN" "$(_localrc_missing_detail "$current_value" "$default_value")"
       fi
     else
       audit_failed=true
-      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
+      _localrc_print_status "$var" "$_WARN" "$(_localrc_missing_detail "$current_value" "$default_value")"
     fi
     continue
   fi

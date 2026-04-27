@@ -7,20 +7,20 @@ setup() {
 }
 
 @test "_localrc_set_managed_var creates a managed block in an empty file" {
-  run _localrc_set_managed_var "EDITOR" "nvim" "$LOCALRC_PATH"
+  run _localrc_set_managed_var "EDITOR" "hx" "$LOCALRC_PATH"
   [ "$status" -eq 0 ]
 
   run cat "$LOCALRC_PATH"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "# >>> dotfiles localrc >>>" ]
-  [ "${lines[1]}" = 'export EDITOR="nvim"' ]
+  [ "${lines[1]}" = 'export EDITOR="hx"' ]
   [ "${lines[2]}" = "# <<< dotfiles localrc <<<" ]
 }
 
 @test "_localrc_set_managed_var replaces an existing managed value" {
   printf '%s\n' \
     "# >>> dotfiles localrc >>>" \
-    'export EDITOR="code"' \
+    'export EDITOR="hx"' \
     "# <<< dotfiles localrc <<<" > "$LOCALRC_PATH"
 
   run _localrc_set_managed_var "EDITOR" "zed" "$LOCALRC_PATH"
@@ -37,7 +37,7 @@ setup() {
     'export TOKEN="abc123"' \
     '' \
     "# >>> dotfiles localrc >>>" \
-    'export EDITOR="code"' \
+    'export EDITOR="hx"' \
     "# <<< dotfiles localrc <<<" \
     '' \
     '# trailing note' > "$LOCALRC_PATH"
@@ -49,7 +49,7 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'# user secret'* ]]
   [[ "$output" == *'export TOKEN="abc123"'* ]]
-  [[ "$output" == *'export EDITOR="code"'* ]]
+  [[ "$output" == *'export EDITOR="hx"'* ]]
   [[ "$output" == *'export AGENT="codex"'* ]]
   [[ "$output" == *'# trailing note'* ]]
 }
@@ -70,13 +70,37 @@ setup() {
 
 @test "_localrc_get_unmanaged_value ignores exports inside the managed block" {
   printf '%s\n' \
-    'export EDITOR="helix"' \
+    'export EDITOR="vim"' \
     '' \
     "# >>> dotfiles localrc >>>" \
-    'export EDITOR="nvim"' \
+    'export EDITOR="hx"' \
     "# <<< dotfiles localrc <<<" > "$LOCALRC_PATH"
 
   run _localrc_get_unmanaged_value "EDITOR" "$LOCALRC_PATH"
   [ "$status" -eq 0 ]
-  [ "$output" = "helix" ]
+  [ "$output" = "vim" ]
+}
+
+@test "script/localrc --check reports editor defaults and E_EDITOR" {
+  run env -u EDITOR -u VISUAL -u E_EDITOR -u AGENT \
+    HOME="$BATS_TEST_TMPDIR/home" \
+    LOCALRC_PATH="$LOCALRC_PATH" \
+    "$DOTFILES_ROOT/script/localrc" --check
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"EDITOR"* ]]
+  [[ "$output" == *"using repo default hx"* ]]
+  [[ "$output" == *"E_EDITOR"* ]]
+  [[ "$output" == *"using repo default code"* ]]
+}
+
+@test "script/localrc --check distinguishes inherited editor values from defaults" {
+  run env EDITOR=code E_EDITOR=zed AGENT=claude \
+    HOME="$BATS_TEST_TMPDIR/home" \
+    LOCALRC_PATH="$LOCALRC_PATH" \
+    "$DOTFILES_ROOT/script/localrc" --check
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"using current value code; repo default hx"* ]]
+  [[ "$output" == *"using current value zed; repo default code"* ]]
 }

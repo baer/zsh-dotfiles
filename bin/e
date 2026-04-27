@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Quick shortcut to an editor.
+# Quick shortcut to the GUI/project editor.
 #
 # This means that as I travel back and forth between editors, hey, I don't have
 # to re-learn any arcane commands. Neat.
@@ -8,9 +8,9 @@
 # USAGE:
 #
 #   $ e
-#   # => opens the current directory in your editor
+#   # => opens the current directory in your GUI/project editor
 #
 #   $ e .
 #   $ e /usr/local
-#   # => opens the specified directory in your editor
-exec "$EDITOR" "${1:-.}"
+#   # => opens the specified directory in your GUI/project editor
+exec "${E_EDITOR:-code}" "${1:-.}"

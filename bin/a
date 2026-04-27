@@ -2,7 +2,7 @@
 #
 # Quick shortcut to your selected agent CLI.
 #
-# Uses $AGENT like `e` uses $EDITOR. Agent-specific behavior stays limited to
+# Uses $AGENT like `e` uses $E_EDITOR. Agent-specific behavior stays limited to
 # translating `-d` into the right "dangerously skip permissions" flag.
 #
 # USAGE:

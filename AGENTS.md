@@ -79,5 +79,5 @@ Shell config loads on both macOS and Linux. Packages (Homebrew) are macOS-only.
 `system/env.zsh` exports `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` with spec-compliant defaults. Existing values are preserved.
 
 - **New configs** use `$XDG_CONFIG_HOME/<tool>/` via `install.sh` symlinks (see `ghostty/install.sh`, `starship/install.sh`).
-- **Legacy configs** (git, vim, zshrc) stay in `$HOME` — company tooling co-owns `.gitconfig` and `.zshrc`.
+- **Legacy configs** (git, zshrc) stay in `$HOME` — company tooling co-owns `.gitconfig` and `.zshrc`.
 - **Starship** lives at `$XDG_CONFIG_HOME/starship.toml` (its native default location).

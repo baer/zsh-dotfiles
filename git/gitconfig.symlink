@@ -70,8 +70,8 @@
 [core]
         attributesfile = ~/.gitattributes
         excludesfile = ~/.gitignore
-        # Vim for git (fast terminal editor; EDITOR=code is for general use)
-        editor = vim
+        # Helix is the terminal editor; e is the GUI/project launcher.
+        editor = hx
         ignorecase = false
         pager = delta
         fsmonitor = true
