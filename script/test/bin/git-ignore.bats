@@ -93,3 +93,68 @@ init_repo() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"unknown subcommand"* ]]
 }
+
+@test "add writes patterns to .gitignore" {
+  init_repo
+  run "$GIT_IGNORE" add node_modules .env
+  [ "$status" -eq 0 ]
+  [ -f "$REPO/.gitignore" ]
+  grep -Fxq "node_modules" "$REPO/.gitignore"
+  grep -Fxq ".env" "$REPO/.gitignore"
+}
+
+@test "add prints a stderr summary by default" {
+  init_repo
+  run "$GIT_IGNORE" add node_modules
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"added 1 pattern to .gitignore"* ]]
+}
+
+@test "add -q suppresses the summary" {
+  init_repo
+  run "$GIT_IGNORE" -q add node_modules
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "add is idempotent on duplicate patterns" {
+  init_repo
+  printf 'node_modules\n' > "$REPO/.gitignore"
+  before=$(md5sum < "$REPO/.gitignore")
+  run "$GIT_IGNORE" add node_modules
+  [ "$status" -eq 0 ]
+  after=$(md5sum < "$REPO/.gitignore")
+  [ "$before" = "$after" ]
+}
+
+@test "add reports duplicates in the summary" {
+  init_repo
+  printf 'node_modules\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" add node_modules .env
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"1 already present"* ]]
+}
+
+@test "add appends a trailing newline before writing" {
+  init_repo
+  printf 'existing-line' > "$REPO/.gitignore"   # no trailing \n
+  run "$GIT_IGNORE" add new-line
+  [ "$status" -eq 0 ]
+  [ "$(cat "$REPO/.gitignore")" = "$(printf 'existing-line\nnew-line')" ]
+}
+
+@test "add creates the file if missing" {
+  init_repo
+  [ ! -e "$REPO/.gitignore" ]
+  run "$GIT_IGNORE" add foo
+  [ "$status" -eq 0 ]
+  [ -f "$REPO/.gitignore" ]
+}
+
+@test "add -p creates .git/info/exclude path" {
+  init_repo
+  rm -f "$REPO/.git/info/exclude"
+  run "$GIT_IGNORE" add -p '*.tmp'
+  [ "$status" -eq 0 ]
+  grep -Fxq '*.tmp' "$REPO/.git/info/exclude"
+}

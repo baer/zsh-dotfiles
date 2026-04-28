@@ -6,8 +6,6 @@ set -euo pipefail
 # -- helpers ---------------------------------------------------------
 
 die()  { printf 'git-ignore: %s\n' "$1" >&2; exit "${2:-1}"; }
-# shellcheck disable=SC2329
-# TODO(Task 3): warn() gains its first caller in cmd_add; remove the disable above then
 warn() { printf 'git-ignore: %s\n' "$1" >&2; }
 
 # -- color detection ------------------------------------------------
@@ -85,7 +83,6 @@ EOF
 quiet=false
 verbose=false
 
-# shellcheck disable=SC2034  # quiet/verbose consumed in Task 3 (cmd_add); remove then
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)    usage ;;
@@ -162,6 +159,31 @@ resolve_path() {
   esac
 }
 
+# -- io primitives ---------------------------------------------------
+
+file_contains() {
+  local file="$1" pattern="$2"
+  [ -f "$file" ] || return 1
+  grep -Fxq -- "$pattern" "$file"
+}
+
+ensure_trailing_newline() {
+  local file="$1"
+  [ -s "$file" ] || return 0
+  [ "$(tail -c 1 "$file"; printf x)" = "$(printf '\nx')" ] && return 0
+  printf '\n' >> "$file"
+}
+
+# shellcheck disable=SC2088  # ~/… in printf format is intentional display, not path expansion
+relative_path() {
+  local p="$1"
+  case "$p" in
+    "$PWD"/*) printf '%s\n' "${p#"$PWD"/}" ;;
+    "$HOME"/*) printf '~/%s\n' "${p#"$HOME"/}" ;;
+    *) printf '%s\n' "$p" ;;
+  esac
+}
+
 # -- subcommands -----------------------------------------------------
 
 cmd_path() {
@@ -173,7 +195,48 @@ cmd_path() {
   resolve_path "$scope"
 }
 
+cmd_add() {
+  parse_scope "$@"
+  set -- "${remaining_args[@]}"
+  [ "$scope" = "all" ] && die "add does not support --all"
+  [ -z "$scope" ] && scope="local"
+
+  [ $# -gt 0 ] || die "add requires patterns or '-' to read from stdin"
+
+  local file
+  file=$(resolve_path "$scope")
+
+  local patterns=()
+  patterns=("$@")
+
+  mkdir -p "$(dirname "$file")"
+  [ -e "$file" ] || : > "$file"
+  ensure_trailing_newline "$file"
+
+  local added=0 skipped=0 p
+  for p in "${patterns[@]}"; do
+    if file_contains "$file" "$p"; then
+      skipped=$((skipped + 1))
+      $verbose && warn "skipping '$p' (already present)"
+    else
+      printf '%s\n' "$p" >> "$file"
+      added=$((added + 1))
+      $verbose && warn "adding '$p'"
+    fi
+  done
+
+  if ! $quiet; then
+    local rel msg pat_word
+    rel=$(relative_path "$file")
+    pat_word="patterns"; [ "$added" -eq 1 ] && pat_word="pattern"
+    msg="added $added $pat_word to $rel"
+    [ "$skipped" -gt 0 ] && msg="$msg ($skipped already present)"
+    warn "$msg"
+  fi
+}
+
 case "$subcommand" in
+  add)        cmd_add "$@" ;;
   path)       cmd_path "$@" ;;
   *)          die "unknown subcommand: $subcommand (see git ignore -h)" ;;
 esac
