@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# git-ignore — manage gitignore patterns at three scopes. Run 'git ignore -h'.
+
+set -euo pipefail
+
+# -- helpers ---------------------------------------------------------
+
+die()  { printf 'git-ignore: %s\n' "$1" >&2; exit "${2:-1}"; }
+# shellcheck disable=SC2329
+warn() { printf 'git-ignore: %s\n' "$1" >&2; }
+
+# -- color detection ------------------------------------------------
+
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  is_tty=false
+else
+  is_tty=true
+fi
+export is_tty
+
+# -- usage -----------------------------------------------------------
+
+usage() {
+  cat <<'EOF'
+Usage: git ignore [-q|-v] <subcommand> [<scope>] [<args>...]
+
+Manages gitignore patterns at three scopes: --global (your user-wide
+ignore), --local (the repo's tracked .gitignore), --private (the
+per-clone .git/info/exclude).
+
+Subcommands:
+  list              List patterns. Default scope: --all.
+  add               Add patterns. Default scope: --local.
+  rm                Remove patterns. Default scope: --local.
+  edit              Open the scope's file in $GIT_EDITOR.
+  path              Print the absolute path to the scope's file.
+
+Scope flags (mutually exclusive):
+  -l, --local       <repo>/.gitignore               (default for write commands)
+  -g, --global      core.excludesFile, falling back to ~/.gitignore,
+                    then $XDG_CONFIG_HOME/git/ignore
+  -p, --private     <repo>/.git/info/exclude        (alias: --info)
+  --all             list-only — every scope, in order: global, local, private
+
+Global options:
+  -q, --quiet       Suppress success summaries (errors still print).
+  -v, --verbose     Print per-pattern action lines on stderr.
+  -h, --help        Show this message.
+
+Stdin:
+  add and rm read patterns from stdin when '-' is given as the only
+  positional argument. Lines starting with '#' and blank lines are
+  skipped, so an existing .gitignore can be piped in directly.
+
+Output:
+  Stdout is reserved for content (list output, path output). All
+  status, summaries, warnings, and errors go to stderr. list output
+  is TTY-aware: scope headers when interactive, tab-separated when
+  piped.
+
+Exit codes:
+  0  success
+  1  usage error (unknown flag, missing arg, conflicting scopes,
+     pattern containing literal newline)
+  2  environment error (not in a repo when one is required)
+  3  I/O error (can't read or write the target file)
+
+Examples:
+  git ignore                            # list all scopes (TTY-aware)
+  git ignore add node_modules .env      # add to local
+  git ignore add -g .DS_Store           # add to global
+  git ignore add -p '*.swp'             # add to per-clone exclude
+  git ignore rm .env                    # remove from local
+  curl -s https://gitignore.io/api/macos | git ignore add -g -
+  git ignore list -l > new.gitignore    # raw single-scope dump
+  code "$(git ignore path -g)"          # open the global file
+  git ignore edit -l                    # open repo's .gitignore
+EOF
+  exit 0
+}
+
+# -- parse global flags then dispatch ---------------------------------
+
+quiet=false
+verbose=false
+export quiet verbose
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)    usage ;;
+    -q|--quiet)   quiet=true; shift ;;
+    -v|--verbose) verbose=true; shift ;;
+    *)            break ;;
+  esac
+done
+
+# Bare invocation = list --all
+if [ $# -eq 0 ]; then
+  set -- list --all
+fi
+
+subcommand="$1"; shift
+
+case "$subcommand" in
+  *)  die "unknown subcommand: $subcommand (see git ignore -h)" ;;
+esac
