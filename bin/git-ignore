@@ -208,7 +208,23 @@ cmd_add() {
   local file
   file=$(resolve_path "$scope")
 
-  local patterns=("$@")
+  local patterns=()
+  if [ $# -eq 1 ] && [ "$1" = "-" ]; then
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Trim leading/trailing whitespace
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      case "$line" in
+        ''|'#'*) continue ;;
+      esac
+      patterns+=("$line")
+    done
+  else
+    patterns=("$@")
+  fi
+
+  [ ${#patterns[@]} -eq 0 ] && return 0
 
   mkdir -p "$(dirname "$file")"
   [ -e "$file" ] || : > "$file"

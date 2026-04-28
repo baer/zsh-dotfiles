@@ -161,3 +161,35 @@ init_repo() {
   [ "$status" -eq 0 ]
   grep -Fxq '*.tmp' "$REPO/.git/info/exclude"
 }
+
+@test "add - reads patterns from stdin" {
+  init_repo
+  run bash -c "printf 'foo\nbar\n' | '$GIT_IGNORE' add -"
+  [ "$status" -eq 0 ]
+  grep -Fxq "foo" "$REPO/.gitignore"
+  grep -Fxq "bar" "$REPO/.gitignore"
+}
+
+@test "add - skips blank lines and comments from stdin" {
+  init_repo
+  run bash -c "printf '# comment\n\nfoo\n  \nbar\n' | '$GIT_IGNORE' add -"
+  [ "$status" -eq 0 ]
+  grep -Fxq "foo" "$REPO/.gitignore"
+  grep -Fxq "bar" "$REPO/.gitignore"
+  ! grep -q '#' "$REPO/.gitignore"
+  ! grep -qE '^\s*$' "$REPO/.gitignore"
+}
+
+@test "add with no patterns and no - is a usage error" {
+  init_repo
+  run "$GIT_IGNORE" add
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"requires patterns"* ]]
+}
+
+@test "add - with empty stdin is a no-op (exit 0)" {
+  init_repo
+  run bash -c ": | '$GIT_IGNORE' add -"
+  [ "$status" -eq 0 ]
+  [ ! -s "$REPO/.gitignore" ] || [ ! -e "$REPO/.gitignore" ]
+}
