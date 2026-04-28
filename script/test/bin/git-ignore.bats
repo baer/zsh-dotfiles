@@ -82,6 +82,7 @@ init_repo() {
   run "$GIT_IGNORE" path -l
   [ "$status" -eq 2 ]
   [[ "$output" == *"not in a git repo"* ]]
+  [[ "$output" == *"--global"* ]]
 }
 
 @test "conflicting scope flags exit 1" {
@@ -392,4 +393,32 @@ init_repo() {
   run "$GIT_IGNORE" edit --all
   [ "$status" -eq 1 ]
   [[ "$output" == *"--all"* ]]
+}
+
+@test "edit -g opens the global gitignore in EDITOR" {
+  export GIT_CONFIG_GLOBAL="$BATS_TEST_TMPDIR/global-config"
+  : > "$GIT_CONFIG_GLOBAL"
+  git config --global core.excludesFile "$BATS_TEST_TMPDIR/myglobal"
+  EDITOR='echo OPENED:' run "$GIT_IGNORE" edit -g
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OPENED:"*"$BATS_TEST_TMPDIR/myglobal"* ]]
+  [ -f "$BATS_TEST_TMPDIR/myglobal" ]
+}
+
+@test "add -v prints per-pattern action lines on stderr" {
+  init_repo
+  printf 'foo\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" -v add foo bar
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"adding 'bar'"* ]]
+  [[ "$output" == *"skipping 'foo' (already present)"* ]]
+}
+
+@test "rm -v prints per-pattern action lines on stderr" {
+  init_repo
+  printf 'foo\nbar\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" -v rm foo missing
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removing 'foo'"* ]]
+  [[ "$output" == *"not found: 'missing'"* ]]
 }

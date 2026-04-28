@@ -27,9 +27,9 @@ ignore), --local (the repo's tracked .gitignore), --private (the
 per-clone .git/info/exclude).
 
 Subcommands:
-  list              List patterns. Default scope: --all.
+  list, ls          List patterns. Default scope: --all.
   add               Add patterns. Default scope: --local.
-  rm                Remove patterns. Default scope: --local.
+  rm, remove        Remove patterns. Default scope: --local.
   edit              Open the scope's file in $GIT_EDITOR.
   path              Print the absolute path to the scope's file.
 
@@ -60,8 +60,7 @@ Exit codes:
   0  success
   1  usage error (unknown flag, missing arg, conflicting scopes,
      pattern containing literal newline)
-  2  environment error (not in a repo when one is required)
-  3  I/O error (can't read or write the target file)
+  2  not in a git repo when one is required
 
 Examples:
   git ignore                            # list all scopes (TTY-aware)
@@ -131,7 +130,7 @@ parse_scope() {
 
 need_repo() {
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    || die "not in a git repo" 2
+    || die "not in a git repo (use --global for global-only operations)" 2
 }
 
 resolve_path() {
