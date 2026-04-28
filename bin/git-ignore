@@ -226,6 +226,12 @@ cmd_add() {
 
   [ ${#patterns[@]} -eq 0 ] && return 0
 
+  for p in "${patterns[@]}"; do
+    case "$p" in
+      *$'\n'*) die "pattern contains literal newline: $(printf '%q' "$p")" ;;
+    esac
+  done
+
   mkdir -p "$(dirname "$file")"
   [ -e "$file" ] || : > "$file"
   ensure_trailing_newline "$file"

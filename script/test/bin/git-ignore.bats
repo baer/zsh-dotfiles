@@ -193,3 +193,18 @@ init_repo() {
   [ "$status" -eq 0 ]
   [ ! -s "$REPO/.gitignore" ] || [ ! -e "$REPO/.gitignore" ]
 }
+
+@test "add rejects patterns containing literal newlines" {
+  init_repo
+  pat=$'line1\nline2'
+  run "$GIT_IGNORE" add "$pat"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"newline"* ]]
+}
+
+@test "-- allows literal -foo as a pattern" {
+  init_repo
+  run "$GIT_IGNORE" add -- -foo
+  [ "$status" -eq 0 ]
+  grep -Fxq -- "-foo" "$REPO/.gitignore"
+}
