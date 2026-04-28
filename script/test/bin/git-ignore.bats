@@ -251,6 +251,7 @@ init_repo() {
   run "$GIT_IGNORE" rm anything
   [ "$status" -eq 0 ]
   [ ! -e "$REPO/.gitignore" ]
+  [[ "$output" == *"file does not exist"* ]]
 }
 
 @test "rm - reads patterns from stdin" {
@@ -259,4 +260,23 @@ init_repo() {
   run bash -c "printf 'a\nc\n' | '$GIT_IGNORE' rm -"
   [ "$status" -eq 0 ]
   [ "$(cat "$REPO/.gitignore")" = "b" ]
+}
+
+@test "rm -q suppresses the summary" {
+  init_repo
+  printf 'foo\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" -q rm foo
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "rm preserves file permissions even when no patterns match" {
+  init_repo
+  printf 'foo\n' > "$REPO/.gitignore"
+  chmod 644 "$REPO/.gitignore"
+  before=$(stat -f '%p' "$REPO/.gitignore" 2>/dev/null || stat -c '%a' "$REPO/.gitignore")
+  run "$GIT_IGNORE" rm not-there
+  [ "$status" -eq 0 ]
+  after=$(stat -f '%p' "$REPO/.gitignore" 2>/dev/null || stat -c '%a' "$REPO/.gitignore")
+  [ "$before" = "$after" ]
 }
