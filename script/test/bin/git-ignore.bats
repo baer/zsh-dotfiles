@@ -333,3 +333,24 @@ init_repo() {
   [ "$status" -eq 0 ]
   [[ "$output" == *$'global\tglobal-only'* ]]
 }
+
+@test "list --all (non-TTY) filters blank lines and #-comments" {
+  init_repo
+  printf '# header comment\n\nfoo\n\n# inline comment\nbar\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" list --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'local\tfoo'* ]]
+  [[ "$output" == *$'local\tbar'* ]]
+  ! [[ "$output" == *'#'* ]]
+  ! [[ "$output" == *$'local\t\n'* ]]
+}
+
+@test "list -l preserves comments and blank lines (round-trippable)" {
+  init_repo
+  contents=$'# header\n\nfoo\n\nbar\n'
+  printf '%s' "$contents" > "$REPO/.gitignore"
+  run "$GIT_IGNORE" list -l
+  [ "$status" -eq 0 ]
+  # cat strips no content; command substitution strips the final \n only
+  [ "$output" = "$(printf '# header\n\nfoo\n\nbar')" ]
+}

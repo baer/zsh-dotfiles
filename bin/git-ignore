@@ -327,6 +327,9 @@ cmd_rm() {
 }
 
 # Print one scope as either headered (TTY) or tab-prefixed lines.
+# Filters blank lines and #-comments — --all mode is for pipeline use,
+# not faithful round-tripping. Use `git ignore list -l` (single scope)
+# for raw, comment-preserving output.
 # $1 = scope name (local|global|private)
 # $2 = mode: "header" or "tab"
 print_scope_lines() {
@@ -334,21 +337,21 @@ print_scope_lines() {
   # Don't crash if the scope can't be resolved (e.g. local outside a repo)
   file=$(resolve_path "$s" 2>/dev/null) || return 0
   [ -f "$file" ] || return 0
-  # Skip files with no real content (only blanks/comments — e.g. default exclude)
-  grep -qvE '^[[:space:]]*(#|$)' "$file" 2>/dev/null || return 0
+  # Skip the scope entirely if it has no real (non-blank, non-comment) content.
+  grep -qvE '^[[:space:]]*(#|$)' "$file" || return 0
 
   case "$mode" in
     header)
       local rel
       rel=$(relative_path "$file")
       printf '# %s (%s)\n' "$s" "$rel"
-      sed 's/^/  /' "$file"
+      grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^/  /'
       printf '\n'
       ;;
     tab)
-      while IFS= read -r line || [ -n "$line" ]; do
+      grep -vE '^[[:space:]]*(#|$)' "$file" | while IFS= read -r line || [ -n "$line" ]; do
         printf '%s\t%s\n' "$s" "$line"
-      done < "$file"
+      done
       ;;
   esac
 }
