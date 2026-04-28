@@ -300,7 +300,7 @@ cmd_rm() {
   tmp=$(mktemp)
   trap 'rm -f "$tmp"' RETURN
 
-  cp "$file" "$tmp"
+  cp -p "$file" "$tmp"
   for p in "${patterns[@]}"; do
     if grep -Fxq -- "$p" "$tmp"; then
       grep -Fxv -- "$p" "$tmp" > "${tmp}.next" || true
