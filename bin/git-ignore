@@ -262,8 +262,74 @@ cmd_add() {
   fi
 }
 
+cmd_rm() {
+  parse_scope "$@"
+  set -- "${remaining_args[@]}"
+  [ "$scope" = "all" ] && die "rm does not support --all"
+  [ -z "$scope" ] && scope="local"
+
+  [ $# -gt 0 ] || die "rm requires patterns or '-' to read from stdin"
+
+  local file
+  file=$(resolve_path "$scope")
+
+  local patterns=()
+  if [ $# -eq 1 ] && [ "$1" = "-" ]; then
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      case "$line" in
+        ''|'#'*) continue ;;
+      esac
+      patterns+=("$line")
+    done
+  else
+    patterns=("$@")
+  fi
+
+  [ ${#patterns[@]} -eq 0 ] && return 0
+
+  if [ ! -f "$file" ]; then
+    $quiet || warn "removed 0 patterns from $(relative_path "$file") (file does not exist)"
+    return 0
+  fi
+
+  local removed=0 missing=0 p
+  local tmp
+  tmp=$(mktemp)
+  trap 'rm -f "$tmp"' RETURN
+
+  cp "$file" "$tmp"
+  for p in "${patterns[@]}"; do
+    if grep -Fxq -- "$p" "$tmp"; then
+      grep -Fxv -- "$p" "$tmp" > "${tmp}.next" || true
+      mv "${tmp}.next" "$tmp"
+      removed=$((removed + 1))
+      $verbose && warn "removing '$p'"
+    else
+      missing=$((missing + 1))
+      $verbose && warn "not found: '$p'"
+    fi
+  done
+  mv "$tmp" "$file"
+
+  # TODO(Task 8): same cd-to-toplevel issue as cmd_add — relative_path
+  # may render an absolute or ~-prefixed path when run from a subdir.
+  # Same fix needed in cmd_add.
+  if ! $quiet; then
+    local rel msg pat_word
+    rel=$(relative_path "$file")
+    pat_word="patterns"; [ "$removed" -eq 1 ] && pat_word="pattern"
+    msg="removed $removed $pat_word from $rel"
+    [ "$missing" -gt 0 ] && msg="$msg ($missing not found)"
+    warn "$msg"
+  fi
+}
+
 case "$subcommand" in
   add)        cmd_add "$@" ;;
+  rm|remove)  cmd_rm "$@" ;;
   path)       cmd_path "$@" ;;
   *)          die "unknown subcommand: $subcommand (see git ignore -h)" ;;
 esac

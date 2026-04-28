@@ -208,3 +208,55 @@ init_repo() {
   [ "$status" -eq 0 ]
   grep -Fxq -- "-foo" "$REPO/.gitignore"
 }
+
+@test "rm removes an exact-match line" {
+  init_repo
+  printf 'foo\nbar\nbaz\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" rm bar
+  [ "$status" -eq 0 ]
+  [ "$(cat "$REPO/.gitignore")" = "$(printf 'foo\nbaz')" ]
+}
+
+@test "rm preserves comments and other lines" {
+  init_repo
+  printf '# top comment\nfoo\n# inline comment\nbar\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" rm foo
+  [ "$status" -eq 0 ]
+  grep -Fxq '# top comment' "$REPO/.gitignore"
+  grep -Fxq '# inline comment' "$REPO/.gitignore"
+  grep -Fxq 'bar' "$REPO/.gitignore"
+  ! grep -Fxq 'foo' "$REPO/.gitignore"
+}
+
+@test "rm of a missing pattern is a no-op (exit 0)" {
+  init_repo
+  printf 'foo\n' > "$REPO/.gitignore"
+  before=$(cat "$REPO/.gitignore")
+  run "$GIT_IGNORE" rm not-there
+  [ "$status" -eq 0 ]
+  [ "$(cat "$REPO/.gitignore")" = "$before" ]
+}
+
+@test "rm reports counts in the summary" {
+  init_repo
+  printf 'foo\nbar\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" rm foo not-there
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed 1 pattern from .gitignore"* ]]
+  [[ "$output" == *"1 not found"* ]]
+}
+
+@test "rm of a missing file is a no-op" {
+  init_repo
+  run "$GIT_IGNORE" rm anything
+  [ "$status" -eq 0 ]
+  [ ! -e "$REPO/.gitignore" ]
+}
+
+@test "rm - reads patterns from stdin" {
+  init_repo
+  printf 'a\nb\nc\n' > "$REPO/.gitignore"
+  run bash -c "printf 'a\nc\n' | '$GIT_IGNORE' rm -"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$REPO/.gitignore")" = "b" ]
+}
