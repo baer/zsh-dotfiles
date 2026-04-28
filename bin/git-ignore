@@ -102,6 +102,78 @@ fi
 
 subcommand="$1"; shift
 
+# -- scope and path resolution ---------------------------------------
+
+# Sets globals: scope, remaining_args (array)
+parse_scope() {
+  local scope_seen=""
+  scope=""
+  remaining_args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -l|--local)
+        [ -z "$scope_seen" ] || die "conflicting scope flags: $scope_seen and $1"
+        scope="local"; scope_seen="$1"; shift ;;
+      -g|--global)
+        [ -z "$scope_seen" ] || die "conflicting scope flags: $scope_seen and $1"
+        scope="global"; scope_seen="$1"; shift ;;
+      -p|--private|--info)
+        [ -z "$scope_seen" ] || die "conflicting scope flags: $scope_seen and $1"
+        scope="private"; scope_seen="$1"; shift ;;
+      --all)
+        [ -z "$scope_seen" ] || die "conflicting scope flags: $scope_seen and $1"
+        scope="all"; scope_seen="$1"; shift ;;
+      --)
+        shift
+        while [ $# -gt 0 ]; do remaining_args+=("$1"); shift; done
+        break ;;
+      *)
+        remaining_args+=("$1"); shift ;;
+    esac
+  done
+}
+
+need_repo() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || die "not in a git repo" 2
+}
+
+resolve_path() {
+  local s="$1" p
+  case "$s" in
+    local)
+      need_repo
+      printf '%s/.gitignore\n' "$(git rev-parse --show-toplevel)"
+      ;;
+    global)
+      if p=$(git config --global --get core.excludesFile 2>/dev/null) && [ -n "$p" ]; then
+        printf '%s\n' "${p/#~/$HOME}"
+      elif [ -f "$HOME/.gitignore" ]; then
+        printf '%s\n' "$HOME/.gitignore"
+      else
+        printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore"
+      fi
+      ;;
+    private)
+      need_repo
+      printf '%s\n' "$(git rev-parse --show-toplevel)/.git/info/exclude"
+      ;;
+    *) die "internal error: unknown scope '$s'" ;;
+  esac
+}
+
+# -- subcommands -----------------------------------------------------
+
+cmd_path() {
+  parse_scope "$@"
+  set -- "${remaining_args[@]}"
+  [ $# -eq 0 ] || die "path takes no positional arguments"
+  [ "$scope" = "all" ] && die "path does not support --all"
+  [ -z "$scope" ] && scope="local"
+  resolve_path "$scope"
+}
+
 case "$subcommand" in
-  *)  die "unknown subcommand: $subcommand (see git ignore -h)" ;;
+  path)       cmd_path "$@" ;;
+  *)          die "unknown subcommand: $subcommand (see git ignore -h)" ;;
 esac
