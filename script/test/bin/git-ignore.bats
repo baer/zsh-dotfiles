@@ -280,3 +280,56 @@ init_repo() {
   after=$(stat -f '%p' "$REPO/.gitignore" 2>/dev/null || stat -c '%a' "$REPO/.gitignore")
   [ "$before" = "$after" ]
 }
+
+@test "list -l prints raw patterns from local" {
+  init_repo
+  printf 'foo\nbar\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" list -l
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'foo\nbar')" ]
+}
+
+@test "list -l on missing file produces no output, exit 0" {
+  init_repo
+  run "$GIT_IGNORE" list -l
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "list --all (non-TTY) emits scope<TAB>pattern lines" {
+  init_repo
+  printf 'local-line\n' > "$REPO/.gitignore"
+  printf 'private-line\n' > "$REPO/.git/info/exclude"
+  run "$GIT_IGNORE" list --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'local\tlocal-line'* ]]
+  [[ "$output" == *$'private\tprivate-line'* ]]
+}
+
+@test "list --all omits empty scopes" {
+  init_repo
+  printf 'only-local\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE" list --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'local\tonly-local'* ]]
+  ! [[ "$output" == *$'global\t'* ]]
+  ! [[ "$output" == *$'private\t'* ]]
+}
+
+@test "bare git ignore is sugar for list --all" {
+  init_repo
+  printf 'foo\n' > "$REPO/.gitignore"
+  run "$GIT_IGNORE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'local\tfoo'* ]]
+}
+
+@test "list outside a repo with --all shows global only" {
+  HOME="$BATS_TEST_TMPDIR/h"
+  mkdir -p "$HOME"
+  printf 'global-only\n' > "$HOME/.gitignore"
+  cd "$BATS_TEST_TMPDIR"
+  HOME="$HOME" run "$GIT_IGNORE" list --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'global\tglobal-only'* ]]
+}

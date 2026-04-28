@@ -10,7 +10,6 @@ warn() { printf 'git-ignore: %s\n' "$1" >&2; }
 
 # -- color detection ------------------------------------------------
 
-# shellcheck disable=SC2034
 if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
   is_tty=false
 else
@@ -327,7 +326,55 @@ cmd_rm() {
   fi
 }
 
+# Print one scope as either headered (TTY) or tab-prefixed lines.
+# $1 = scope name (local|global|private)
+# $2 = mode: "header" or "tab"
+print_scope_lines() {
+  local s="$1" mode="$2" file
+  # Don't crash if the scope can't be resolved (e.g. local outside a repo)
+  file=$(resolve_path "$s" 2>/dev/null) || return 0
+  [ -f "$file" ] || return 0
+  # Skip files with no real content (only blanks/comments — e.g. default exclude)
+  grep -qvE '^[[:space:]]*(#|$)' "$file" 2>/dev/null || return 0
+
+  case "$mode" in
+    header)
+      local rel
+      rel=$(relative_path "$file")
+      printf '# %s (%s)\n' "$s" "$rel"
+      sed 's/^/  /' "$file"
+      printf '\n'
+      ;;
+    tab)
+      while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s\t%s\n' "$s" "$line"
+      done < "$file"
+      ;;
+  esac
+}
+
+cmd_list() {
+  parse_scope "$@"
+  set -- "${remaining_args[@]}"
+  [ $# -eq 0 ] || die "list takes no positional arguments"
+  [ -z "$scope" ] && scope="all"
+
+  if [ "$scope" = "all" ]; then
+    local mode="tab"
+    $is_tty && mode="header"
+    local s
+    for s in global local private; do
+      print_scope_lines "$s" "$mode"
+    done
+  else
+    local file
+    file=$(resolve_path "$scope")
+    if [ -f "$file" ]; then cat "$file"; fi
+  fi
+}
+
 case "$subcommand" in
+  list|ls)    cmd_list "$@" ;;
   add)        cmd_add "$@" ;;
   rm|remove)  cmd_rm "$@" ;;
   path)       cmd_path "$@" ;;
