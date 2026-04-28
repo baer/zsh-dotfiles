@@ -5,6 +5,9 @@ setup() {
   GIT_IGNORE="$DOTFILES_ROOT/bin/git-ignore"
   REPO="$BATS_TEST_TMPDIR/repo"
   export GIT_CONFIG_GLOBAL=/dev/null
+  # Clear GIT_EDITOR so tests can inject an editor via EDITOR= without
+  # the ambient GIT_EDITOR (set by editors/env.zsh) taking precedence.
+  unset GIT_EDITOR
 }
 
 init_repo() {
@@ -353,4 +356,40 @@ init_repo() {
   [ "$status" -eq 0 ]
   # cat strips no content; command substitution strips the final \n only
   [ "$output" = "$(printf '# header\n\nfoo\n\nbar')" ]
+}
+
+@test "edit -l opens the local gitignore in EDITOR" {
+  init_repo
+  EDITOR='echo OPENED:' run "$GIT_IGNORE" edit -l
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OPENED:"*"$REPO/.gitignore"* ]]
+}
+
+@test "edit -p opens the per-clone exclude in EDITOR" {
+  init_repo
+  EDITOR='echo OPENED:' run "$GIT_IGNORE" edit -p
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OPENED:"*"$REPO/.git/info/exclude"* ]]
+}
+
+@test "edit creates the file before opening" {
+  init_repo
+  [ ! -e "$REPO/.gitignore" ]
+  EDITOR='true' run "$GIT_IGNORE" edit -l
+  [ "$status" -eq 0 ]
+  [ -f "$REPO/.gitignore" ]
+}
+
+@test "edit defaults to local without -l" {
+  init_repo
+  EDITOR='echo OPENED:' run "$GIT_IGNORE" edit
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OPENED:"*"$REPO/.gitignore"* ]]
+}
+
+@test "edit rejects --all" {
+  init_repo
+  run "$GIT_IGNORE" edit --all
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--all"* ]]
 }
