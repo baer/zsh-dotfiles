@@ -204,6 +204,10 @@ cmd_add() {
 
   [ $# -gt 0 ] || die "add requires patterns or '-' to read from stdin"
 
+  # cd to repo toplevel for in-tree scopes so summary paths render
+  # cleanly (.gitignore, not ~/path/to/repo/.gitignore) from subdirs.
+  case "$scope" in local|private) cd "$(git rev-parse --show-toplevel)" ;; esac
+
   local file
   file=$(resolve_path "$scope")
 
@@ -247,10 +251,6 @@ cmd_add() {
     fi
   done
 
-  # TODO(Task 8): cd to repo toplevel for local/private scopes so
-  # relative_path renders ".gitignore" from any subdir; currently
-  # the summary shows an absolute or ~-prefixed path when run from
-  # a subdir. Same fix needed in cmd_rm.
   if ! $quiet; then
     local rel msg pat_word
     rel=$(relative_path "$file")
@@ -268,6 +268,10 @@ cmd_rm() {
   [ -z "$scope" ] && scope="local"
 
   [ $# -gt 0 ] || die "rm requires patterns or '-' to read from stdin"
+
+  # cd to repo toplevel for in-tree scopes so summary paths render
+  # cleanly (.gitignore, not ~/path/to/repo/.gitignore) from subdirs.
+  case "$scope" in local|private) cd "$(git rev-parse --show-toplevel)" ;; esac
 
   local file
   file=$(resolve_path "$scope")
@@ -313,9 +317,6 @@ cmd_rm() {
   done
   mv "$tmp" "$file"
 
-  # TODO(Task 8): same cd-to-toplevel issue as cmd_add — relative_path
-  # may render an absolute or ~-prefixed path when run from a subdir.
-  # Same fix needed in cmd_add.
   if ! $quiet; then
     local rel msg pat_word
     rel=$(relative_path "$file")
@@ -376,10 +377,29 @@ cmd_list() {
   fi
 }
 
+cmd_edit() {
+  parse_scope "$@"
+  set -- "${remaining_args[@]}"
+  [ $# -eq 0 ] || die "edit takes no positional arguments"
+  [ "$scope" = "all" ] && die "edit does not support --all"
+  [ -z "$scope" ] && scope="local"
+
+  local file editor
+  file=$(resolve_path "$scope")
+  mkdir -p "$(dirname "$file")"
+  [ -e "$file" ] || : > "$file"
+
+  editor=$(git var GIT_EDITOR)
+  # The editor string may contain arguments (e.g., "code --wait").
+  # Match git's own behavior: hand it to sh -c so it word-splits there.
+  exec sh -c "$editor \"\$1\"" sh "$file"
+}
+
 case "$subcommand" in
   list|ls)    cmd_list "$@" ;;
   add)        cmd_add "$@" ;;
   rm|remove)  cmd_rm "$@" ;;
+  edit)       cmd_edit "$@" ;;
   path)       cmd_path "$@" ;;
   *)          die "unknown subcommand: $subcommand (see git ignore -h)" ;;
 esac
