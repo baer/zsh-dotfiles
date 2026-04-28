@@ -141,6 +141,9 @@ init_repo() {
   run "$GIT_IGNORE" add new-line
   [ "$status" -eq 0 ]
   [ "$(cat "$REPO/.gitignore")" = "$(printf 'existing-line\nnew-line')" ]
+  # Verify the file actually ends with a newline (command substitution can't see this)
+  last_byte=$(tail -c 1 "$REPO/.gitignore" | od -An -tx1 | tr -d ' ')
+  [ "$last_byte" = "0a" ]
 }
 
 @test "add creates the file if missing" {

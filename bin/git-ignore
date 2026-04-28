@@ -170,6 +170,8 @@ file_contains() {
 ensure_trailing_newline() {
   local file="$1"
   [ -s "$file" ] || return 0
+  # Append a sentinel byte to both sides so command substitution
+  # does not strip the trailing newline we are trying to detect.
   [ "$(tail -c 1 "$file"; printf x)" = "$(printf '\nx')" ] && return 0
   printf '\n' >> "$file"
 }
@@ -206,8 +208,7 @@ cmd_add() {
   local file
   file=$(resolve_path "$scope")
 
-  local patterns=()
-  patterns=("$@")
+  local patterns=("$@")
 
   mkdir -p "$(dirname "$file")"
   [ -e "$file" ] || : > "$file"
@@ -225,6 +226,10 @@ cmd_add() {
     fi
   done
 
+  # TODO(Task 8): cd to repo toplevel for local/private scopes so
+  # relative_path renders ".gitignore" from any subdir; currently
+  # the summary shows an absolute or ~-prefixed path when run from
+  # a subdir. Same fix needed in cmd_rm.
   if ! $quiet; then
     local rel msg pat_word
     rel=$(relative_path "$file")
