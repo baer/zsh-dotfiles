@@ -41,7 +41,7 @@ init_repo() {
   [ "$output" = "$REPO/.git/info/exclude" ]
 }
 
-@test "path -l defaults to local even without -l" {
+@test "path defaults to local scope when no scope flag is given" {
   init_repo
   run "$GIT_IGNORE" path
   [ "$status" -eq 0 ]
@@ -66,9 +66,9 @@ init_repo() {
 }
 
 @test "path -g falls back to XDG_CONFIG_HOME when neither is set" {
-  HOME="$BATS_TEST_TMPDIR/empty-home"
-  mkdir -p "$HOME"
-  HOME="$HOME" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg" \
+  local empty_home="$BATS_TEST_TMPDIR/empty-home"
+  mkdir -p "$empty_home"
+  HOME="$empty_home" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg" \
     run "$GIT_IGNORE" path -g
   [ "$status" -eq 0 ]
   [ "$output" = "$BATS_TEST_TMPDIR/xdg/git/ignore" ]
