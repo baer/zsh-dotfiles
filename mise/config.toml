@@ -2,5 +2,4 @@
 bun = "latest"
 node = "lts"
 pnpm = "latest"
-wrangler = "4.87.0"
 yarn = "latest"
