@@ -45,6 +45,7 @@ EOF
 include_remotes=false
 reverse=false
 limit=""
+output_mode=auto    # auto | pretty | plain
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,18 +54,26 @@ while [ $# -gt 0 ]; do
     -n|--limit)    [ $# -ge 2 ] || die "$1 requires a number (see git recent -h)"
                    case "$2" in ''|*[!0-9]*) die "$1 requires a number (got '$2') (see git recent -h)" ;; esac
                    limit="$2"; shift 2 ;;
+    --pretty)      output_mode=pretty; shift ;;
+    --plain)       output_mode=plain;  shift ;;
     -*)            die "unknown option: $1 (see git recent -h)" ;;
     *)             die "unexpected argument: $1 (see git recent -h)" ;;
   esac
 done
 
+# Resolve auto.
+if [ "$output_mode" = auto ]; then
+  if [ -t 1 ]; then output_mode=pretty; else output_mode=plain; fi
+fi
+
 # -- gather branch records ------------------------------------------
 
-# One record per branch, fields separated by TAB, records by NL.
+# One record per branch, fields separated by ASCII Unit Separator (\x1f) —
+# chosen because it cannot appear in commit subjects or author names, records by NL.
 # Fields: 0 head 1 refname 2 upstream 3 track 4 ts 5 hash 6 author 7 subject
-fmt='%(HEAD)%09%(refname:short)%09%(upstream:short)%09%(upstream:track)'
-fmt+='%09%(committerdate:unix)%09%(objectname:short)%09%(authorname)'
-fmt+='%09%(contents:subject)'
+fmt='%(HEAD)%1f%(refname:short)%1f%(upstream:short)%1f%(upstream:track)'
+fmt+='%1f%(committerdate:unix)%1f%(objectname:short)%1f%(authorname)'
+fmt+='%1f%(contents:subject)'
 
 refs=(refs/heads/)
 $include_remotes && refs+=(refs/remotes/)
@@ -83,8 +92,33 @@ fi
 
 # -- emit -----------------------------------------------------------
 
-# Plain mode (default when not a TTY): one refname per line.
-for rec in ${records[@]+"${records[@]}"}; do
-  IFS=$'\t' read -r _head refname _rest <<<"$rec"
-  printf '%s\n' "$refname"
-done
+emit_plain() {
+  local rec refname
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r _ refname _ <<<"$rec"
+    printf '%s\n' "$refname"
+  done
+}
+
+emit_pretty() {
+  local rec head refname upstream track ts hash author subject date marker up
+  for rec in ${records[@]+"${records[@]}"}; do
+    # shellcheck disable=SC2034  # author destructured but not yet displayed; prevents subject bleed
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    marker=' '
+    [ "$head" = '*' ] && marker='*'
+    date=$(date -u -r "$ts" +%Y-%m-%d 2>/dev/null \
+           || date -u -d "@$ts" +%Y-%m-%d 2>/dev/null \
+           || echo '----------')
+    # Compose upstream column: "upstream [track]" if both, else either, else blank.
+    up="$upstream"
+    [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
+    [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
+    printf '%s %s %s %s %s %s\n' "$date" "$marker" "$refname" "$up" "$hash" "$subject"
+  done
+}
+
+case "$output_mode" in
+  plain)  emit_plain ;;
+  pretty) emit_pretty ;;
+esac

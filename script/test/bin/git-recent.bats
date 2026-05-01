@@ -130,3 +130,39 @@ make_branch() {
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "--pretty forces columnar output even when piped" {
+  init_repo
+  make_branch feature 1200000000 "add feature X"
+  run "$GIT_RECENT" --pretty
+  [ "$status" -eq 0 ]
+  # First non-main line should match the columnar layout.
+  # Format: "YYYY-MM-DD <marker> <branch> <upstream> <hash> <subject>"
+  [[ "${lines[0]}" =~ ^2008-01-10[[:space:]]+[[:space:]]+feature[[:space:]] ]]
+  [[ "${lines[0]}" == *"add feature X" ]]
+}
+
+@test "--pretty marks the current branch with *" {
+  init_repo
+  make_branch feature 1200000000
+  git checkout -q feature
+  run "$GIT_RECENT" --pretty
+  [ "$status" -eq 0 ]
+  # The line for `feature` should have a `*` in the marker column.
+  for line in "${lines[@]}"; do
+    if [[ "$line" == *" feature "* ]]; then
+      [[ "$line" == *"* feature"* ]]
+      return
+    fi
+  done
+  false
+}
+
+@test "--plain forces refnames-only even on TTY" {
+  init_repo
+  make_branch feature 1200000000
+  run "$GIT_RECENT" --plain
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "feature" ]
+  [ "${lines[1]}" = "main" ]
+}
