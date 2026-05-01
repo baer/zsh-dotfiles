@@ -12,7 +12,7 @@ warn() { printf 'git-recent: %s\n' "$1" >&2; }
 
 usage() {
   cat <<'EOF'
-Usage: git recent [-r] [-n N] [-a] [--json|--null] [--color=WHEN]
+Usage: git recent [-r] [-n N] [-a] [--pretty|--plain|--json|--null] [--color=WHEN]
 
 Lists local branches sorted by their last commit date, newest first.
 
@@ -20,9 +20,12 @@ Options:
   -n, --limit N          Show only the N most recent branches.
   -r, --reverse          Oldest first.
   -a, --all              Include remote-tracking branches.
+      --pretty           Force columnar output (default on TTY).
+      --plain            Force refnames-only output (default when piped).
       --json             NDJSON output (one object per branch).
       --null             NUL-terminated branch names (for `xargs -0`).
       --color=WHEN       auto|always|never (also honors NO_COLOR).
+      --no-color         Alias for --color=never.
   -h, --help             Show this message.
 
 Output:
@@ -138,8 +141,11 @@ fi
 
 # -- gather branch records ------------------------------------------
 
-# One record per branch, fields separated by ASCII Unit Separator (\x1f) —
-# chosen because it cannot appear in commit subjects or author names, records by NL.
+# Records: NL-separated. Fields: ASCII Unit Separator (\x1f).
+# Why \x1f and not NUL: bash herestrings (<<<) truncate at the first \0,
+# so NUL field separators get silently consumed. \x1f is also forbidden
+# in commit subjects and author names (it's a control char), so it's
+# safe to use as a separator across all 8 fields.
 # Fields: 0 head 1 refname 2 upstream 3 track 4 ts 5 hash 6 author 7 subject
 fmt='%(HEAD)%1f%(refname:short)%1f%(upstream:short)%1f%(upstream:track)'
 fmt+='%1f%(committerdate:unix)%1f%(objectname:short)%1f%(authorname)'
