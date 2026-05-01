@@ -76,7 +76,7 @@ json_escape() {
 include_remotes=false
 reverse=false
 limit=""
-output_mode=auto    # auto | pretty | plain | json
+output_mode=auto    # auto | pretty | plain | json | null
 color_when=auto
 
 while [ $# -gt 0 ]; do
@@ -90,6 +90,7 @@ while [ $# -gt 0 ]; do
     --pretty)      output_mode=pretty; shift ;;
     --plain)       output_mode=plain;  shift ;;
     --json)        output_mode=json;   shift ;;
+    --null)        output_mode=null;   shift ;;
     --color=*)     color_when="${1#--color=}"; shift ;;
     --color)       [ $# -ge 2 ] || die "--color requires auto|always|never"
                    color_when="$2"; shift 2 ;;
@@ -166,6 +167,14 @@ emit_plain() {
   for rec in ${records[@]+"${records[@]}"}; do
     IFS=$'\x1f' read -r _ refname _ <<<"$rec"
     printf '%s\n' "$refname"
+  done
+}
+
+emit_null() {
+  local rec refname
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r _ refname _ <<<"$rec"
+    printf '%s\0' "$refname"
   done
 }
 
@@ -253,4 +262,5 @@ case "$output_mode" in
   plain)  emit_plain ;;
   pretty) emit_pretty ;;
   json)   emit_json ;;
+  null)   emit_null ;;
 esac

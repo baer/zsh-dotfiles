@@ -336,3 +336,24 @@ make_remote_tracking() {
   [[ "$output" == *"a"* ]]
   [[ "$output" == *"main"* ]]
 }
+
+@test "--null separates branch names with NUL bytes" {
+  init_repo
+  make_branch a 1100000000
+  make_branch b 1200000000
+  # Three branches: b, a, main → three NULs (one terminator per name).
+  local nul_count
+  nul_count=$("$GIT_RECENT" --null | tr -cd '\0' | wc -c | tr -d ' ')
+  [ "$nul_count" -eq 3 ]
+}
+
+@test "--null pipes correctly into xargs -0" {
+  init_repo
+  make_branch a 1100000000
+  make_branch b 1200000000
+  run bash -c "$GIT_RECENT --null | xargs -0 -n1 echo BR:"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"BR: a"* ]]
+  [[ "$output" == *"BR: b"* ]]
+  [[ "$output" == *"BR: main"* ]]
+}
