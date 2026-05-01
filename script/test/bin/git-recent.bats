@@ -138,7 +138,9 @@ make_branch() {
   [ "$status" -eq 0 ]
   # First non-main line should match the columnar layout.
   # Format: "YYYY-MM-DD <marker> <branch> <upstream> <hash> <subject>"
-  [[ "${lines[0]}" =~ ^2008-01-10[[:space:]]+[[:space:]]+feature[[:space:]] ]]
+  # 3 literal spaces = separator + empty marker column (' ') + separator.
+  # Fails if the marker column is removed (only 2 spaces between date and branch).
+  [[ "${lines[0]}" =~ ^2008-01-10[[:space:]][[:space:]][[:space:]]feature[[:space:]] ]]
   [[ "${lines[0]}" == *"add feature X" ]]
 }
 
