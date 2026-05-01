@@ -167,3 +167,15 @@ setup() {
   run grep -c '^# export EDITOR=' "$LOCALRC_PATH"
   [ "$output" = "1" ]
 }
+
+@test "_localrc_unset_managed_var reverts to commented-empty for no-default var" {
+  _localrc_set_managed_var "HOMEBREW_BUNDLE_CASK_SKIP" "slack" "$LOCALRC_PATH"
+
+  run _localrc_unset_managed_var "HOMEBREW_BUNDLE_CASK_SKIP" "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run grep -c '^export HOMEBREW_BUNDLE_CASK_SKIP=' "$LOCALRC_PATH"
+  [ "$output" = "0" ]
+  run grep -c '^# export HOMEBREW_BUNDLE_CASK_SKIP=' "$LOCALRC_PATH"
+  [ "$output" = "1" ]
+}
