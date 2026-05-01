@@ -61,7 +61,7 @@ trap _trap_exit EXIT
 
 usage() {
   cat <<'EOF'
-Usage: git up [--rebase] [--interactive] [--before CMD] [--after CMD] [BRANCH]
+Usage: git up [--rebase] [--interactive] [--after-pull CMD] [--after-rebase CMD] [BRANCH]
 
 Updates the default branch (main/master) from origin, then
 returns to the branch you were on.  Dirty working trees are
@@ -71,9 +71,9 @@ Options:
   --rebase, -r          Rebase the current branch onto the default branch.
   --interactive, -i     Use interactive rebase (requires --rebase).
   -ri                   Same as --rebase --interactive.
-  --before, -b CMD      Run CMD on the default branch after pulling.
+  --after-pull CMD      Run CMD on the default branch after pulling.
                         Skipped if no new commits were pulled.
-  --after, -a CMD       Run CMD on the current branch after the update.
+  --after-rebase CMD    Run CMD on the current branch after the update.
                         Skipped if no meaningful changes occurred.
   -h                    Show this message.
 
@@ -83,19 +83,19 @@ Arguments:
                         after the operation completes.
 
 Hook commands are passed to eval — use only with trusted input.
---before fires when new commits are pulled.
---after fires when new commits are pulled or rebase moved commits.
+--after-pull fires when new commits are pulled.
+--after-rebase fires when new commits are pulled or rebase moved commits.
 
 Changelog of pulled commits is printed after the update.
 
 Examples:
   git up --rebase
   git up --rebase --interactive
-  git up --before "make build" --after "yarn install"
-  git up -r -b "make" -a "yarn"
+  git up --after-pull "make build" --after-rebase "yarn install"
+  git up --rebase --after-pull "make" --after-rebase "yarn"
   git up feature-branch
   git up feature-branch --interactive
-  git up feature-branch -b "make" -a "yarn"
+  git up feature-branch --after-pull "make" --after-rebase "yarn"
 EOF
   exit 0
 }
@@ -126,8 +126,8 @@ has_inflight_operation() {
 
 rebase=false
 rebase_interactive=false
-before_cmd=""
-after_cmd=""
+after_pull_cmd=""
+after_rebase_cmd=""
 target_branch=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -135,10 +135,10 @@ while [ $# -gt 0 ]; do
     -ri)                  rebase=true; rebase_interactive=true; shift ;;
     -r|--rebase)          rebase=true; shift ;;
     -i|--interactive)     rebase_interactive=true; shift ;;
-    --before|-b)          [ -n "${2:-}" ] || die "$1 requires a command argument"
-                          before_cmd="$2"; shift 2 ;;
-    --after|-a)           [ -n "${2:-}" ] || die "$1 requires a command argument"
-                          after_cmd="$2"; shift 2 ;;
+    --after-pull)         [ -n "${2:-}" ] || die "$1 requires a command argument"
+                          after_pull_cmd="$2"; shift 2 ;;
+    --after-rebase)       [ -n "${2:-}" ] || die "$1 requires a command argument"
+                          after_rebase_cmd="$2"; shift 2 ;;
     -*)                   die "unknown option: $1 (see git up -h)" ;;
     *)                    [ -z "$target_branch" ] || die "unexpected argument: $1 (see git up -h)"
                           target_branch="$1"; shift ;;
@@ -210,14 +210,14 @@ if $pulled_new; then
   new_count=$(git rev-list --count "$old_head".."$new_head")
 fi
 
-# -- before hook -----------------------------------------------------
+# -- after-pull hook -------------------------------------------------
 
-if [ -n "$before_cmd" ]; then
+if [ -n "$after_pull_cmd" ]; then
   if $pulled_new; then
-    echo "Running --before: $before_cmd"
-    eval "$before_cmd" || warn "--before command failed"
+    echo "Running --after-pull: $after_pull_cmd"
+    eval "$after_pull_cmd" || warn "--after-pull command failed"
   else
-    warn "--before skipped (no new commits)"
+    warn "--after-pull skipped (no new commits)"
   fi
 fi
 
@@ -270,14 +270,14 @@ changed=false
 $pulled_new && changed=true
 $did_rebase_change && changed=true
 
-# -- after hook ------------------------------------------------------
+# -- after-rebase hook -----------------------------------------------
 
-if [ -n "$after_cmd" ]; then
+if [ -n "$after_rebase_cmd" ]; then
   if $changed; then
-    echo "Running --after: $after_cmd"
-    eval "$after_cmd" || warn "--after command failed"
+    echo "Running --after-rebase: $after_rebase_cmd"
+    eval "$after_rebase_cmd" || warn "--after-rebase command failed"
   else
-    warn "--after skipped (no changes)"
+    warn "--after-rebase skipped (no changes)"
   fi
 fi
 
