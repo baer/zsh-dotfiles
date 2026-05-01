@@ -251,3 +251,38 @@ make_branch() {
   # safe substring — the glob just needs to confirm no truncation occurred).
   [[ "$output" == *"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"* ]]
 }
+
+make_remote_tracking() {
+  # Create a fake remote-tracking ref by pointing it at a new commit on top of HEAD.
+  # $1=name (e.g. origin/foo)  $2=epoch
+  local name="$1" ts="$2"
+  local sha
+  sha=$(GIT_AUTHOR_DATE="@$ts +0000" GIT_COMMITTER_DATE="@$ts +0000" \
+        git commit-tree HEAD^{tree} -m "remote tip $name" -p HEAD)
+  git update-ref "refs/remotes/$name" "$sha"
+}
+
+@test "default does not include remote-tracking branches" {
+  init_repo
+  make_remote_tracking origin/feat 1200000000
+  run "$GIT_RECENT"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"origin/feat"* ]]
+}
+
+@test "-a includes remote-tracking branches" {
+  init_repo
+  make_branch local-br 1100000000
+  make_remote_tracking origin/feat 1200000000
+  run "$GIT_RECENT" -a
+  [ "$status" -eq 0 ]
+  [[ "${lines[*]}" == *"origin/feat"* ]]
+  [[ "${lines[*]}" == *"local-br"* ]]
+}
+
+@test "--all is an alias for -a" {
+  init_repo
+  make_remote_tracking origin/feat 1200000000
+  run "$GIT_RECENT" --all
+  [[ "$output" == *"origin/feat"* ]]
+}
