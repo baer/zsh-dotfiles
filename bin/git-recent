@@ -46,6 +46,7 @@ include_remotes=false
 reverse=false
 limit=""
 output_mode=auto    # auto | pretty | plain
+color_when=auto
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,14 +57,49 @@ while [ $# -gt 0 ]; do
                    limit="$2"; shift 2 ;;
     --pretty)      output_mode=pretty; shift ;;
     --plain)       output_mode=plain;  shift ;;
+    --color=*)     color_when="${1#--color=}"; shift ;;
+    --color)       [ $# -ge 2 ] || die "--color requires auto|always|never"
+                   color_when="$2"; shift 2 ;;
+    --no-color)    color_when=never; shift ;;
     -*)            die "unknown option: $1 (see git recent -h)" ;;
     *)             die "unexpected argument: $1 (see git recent -h)" ;;
   esac
 done
 
+# Validate color_when before resolving.
+case "$color_when" in
+  auto|always|never) ;;
+  *) die "--color must be auto, always, or never (got '$color_when')" ;;
+esac
+
 # Resolve auto.
 if [ "$output_mode" = auto ]; then
   if [ -t 1 ]; then output_mode=pretty; else output_mode=plain; fi
+fi
+
+# Resolve use_color.
+if [ "$color_when" = always ]; then
+  use_color=true
+elif [ "$color_when" = never ]; then
+  use_color=false
+elif [ -n "${NO_COLOR:-}" ]; then
+  use_color=false
+elif [ -t 1 ]; then
+  use_color=true
+else
+  use_color=false
+fi
+
+# -- resolve colors -------------------------------------------------
+
+if $use_color; then
+  c_branch=$(git config --get-color color.branch.local normal 2>/dev/null || true)
+  c_current=$(git config --get-color color.branch.current green 2>/dev/null || true)
+  c_upstream=$(git config --get-color color.branch.upstream blue 2>/dev/null || true)
+  c_hash=$(git config --get-color color.diff.commit yellow 2>/dev/null || true)
+  c_reset=$(printf '\x1b[0m')
+else
+  c_branch="" c_current="" c_upstream="" c_hash="" c_reset=""
 fi
 
 # -- gather branch records ------------------------------------------
@@ -101,20 +137,26 @@ emit_plain() {
 }
 
 emit_pretty() {
-  local rec head refname upstream track ts hash author subject date marker up
+  local rec head refname upstream track ts hash author subject commit_date marker up
+  local branch_color
   for rec in ${records[@]+"${records[@]}"}; do
-    # shellcheck disable=SC2034  # author destructured but not yet displayed; prevents subject bleed
+    # shellcheck disable=SC2034  # author is destructured to absorb the field; not displayed.
     IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
     marker=' '
-    [ "$head" = '*' ] && marker='*'
-    date=$(date -u -r "$ts" +%Y-%m-%d 2>/dev/null \
-           || date -u -d "@$ts" +%Y-%m-%d 2>/dev/null \
-           || echo '----------')
-    # Compose upstream column: "upstream [track]" if both, else either, else blank.
+    branch_color="$c_branch"
+    if [ "$head" = '*' ]; then marker='*'; branch_color="$c_current"; fi
+    commit_date=$(date -u -r "$ts" +%Y-%m-%d 2>/dev/null \
+                  || date -u -d "@$ts" +%Y-%m-%d 2>/dev/null \
+                  || echo '----------')
     up="$upstream"
     [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
     [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
-    printf '%s %s %s %s %s %s\n' "$date" "$marker" "$refname" "$up" "$hash" "$subject"
+    printf '%s %s %s%s%s %s%s%s %s%s%s %s\n' \
+      "$commit_date" "$marker" \
+      "$branch_color" "$refname" "$c_reset" \
+      "$c_upstream" "$up" "$c_reset" \
+      "$c_hash" "$hash" "$c_reset" \
+      "$subject"
   done
 }
 

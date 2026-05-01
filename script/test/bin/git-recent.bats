@@ -168,3 +168,35 @@ make_branch() {
   [ "${lines[0]}" = "feature" ]
   [ "${lines[1]}" = "main" ]
 }
+
+@test "--color=always emits ANSI escapes" {
+  init_repo
+  make_branch feature 1200000000
+  run "$GIT_RECENT" --pretty --color=always
+  [ "$status" -eq 0 ]
+  # Check for an ESC byte (0x1b) — bash $'\x1b' is the ESC char.
+  [[ "$output" == *$'\x1b'* ]]
+}
+
+@test "--color=never emits no ANSI escapes" {
+  init_repo
+  make_branch feature 1200000000
+  run "$GIT_RECENT" --pretty --color=never
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\x1b'* ]]
+}
+
+@test "NO_COLOR disables color even with --color=auto on TTY" {
+  init_repo
+  make_branch feature 1200000000
+  NO_COLOR=1 run "$GIT_RECENT" --pretty --color=auto
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\x1b'* ]]
+}
+
+@test "--color=invalid exits 1" {
+  init_repo
+  run "$GIT_RECENT" --color=banana
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--color"* ]]
+}
