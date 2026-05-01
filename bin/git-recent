@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# git-recent — list local branches sorted by last commit. Run 'git recent -h'.
+
+set -euo pipefail
+
+# -- helpers ---------------------------------------------------------
+
+die()  { printf 'git-recent: %s\n' "$1" >&2; exit "${2:-1}"; }
+warn() { printf 'git-recent: %s\n' "$1" >&2; }
+
+# -- usage -----------------------------------------------------------
+
+usage() {
+  cat <<'EOF'
+Usage: git recent [-r] [-n N] [-a] [--json|--null] [--color=WHEN]
+
+Lists local branches sorted by their last commit date, newest first.
+
+Options:
+  -n, --limit N          Show only the N most recent branches.
+  -r, --reverse          Oldest first.
+  -a, --all              Include remote-tracking branches.
+      --json             NDJSON output (one object per branch).
+      --null             NUL-terminated branch names (for `xargs -0`).
+      --color=WHEN       auto|always|never (also honors NO_COLOR).
+  -h, --help             Show this message.
+
+Output:
+  When stdout is a TTY: aligned, colored columns with date, current-branch
+  marker, branch name, upstream + ahead/behind, short hash, and subject.
+  When stdout is piped: branch names only, one per line — so `git recent
+  | head -5` and `git recent | fzf` Just Work.
+
+  --json and --null override the auto-detection.
+
+Exit codes:
+  0  success (including empty output)
+  1  usage error
+EOF
+  exit 0
+}
+
+# -- parse flags -----------------------------------------------------
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage ;;
+    -*)        die "unknown option: $1 (see git recent -h)" ;;
+    *)         die "unexpected argument: $1 (see git recent -h)" ;;
+  esac
+done
