@@ -128,15 +128,19 @@ _on_exit() {
 trap '_on_error' ERR
 trap '_on_exit' EXIT
 
-_check_localrc_setup() {
+_sync_localrc() {
   local localrc_script="$DOTFILES_ROOT/script/localrc"
   [[ -x "$localrc_script" ]] || return 0
 
-  if "$localrc_script" --check >/dev/null 2>&1; then
+  if $DRY_RUN; then
+    log_info "Would sync managed block in ~/.localrc"
     return 0
   fi
 
-  _ACTIONABLE_WARNINGS+=("local overrides available — run ${_BOLD}script/localrc${_RST}")
+  if ! "$localrc_script" >/dev/null 2>>"$LOGFILE"; then
+    _ACTIONABLE_WARNINGS+=("localrc sync failed — run ${_BOLD}script/localrc${_RST} for details")
+    return 0
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -174,6 +178,7 @@ if $DRY_RUN; then
     log_skip "Installing Software (not macOS)"
   fi
   log_info "Would run topic install scripts"
+  _sync_localrc
   printf "\n"
   exit 0
 fi
@@ -501,5 +506,5 @@ if [[ $_failed_count -gt 0 ]]; then
 fi
 
 _current_phase=""
-_check_localrc_setup
+_sync_localrc
 print_completion
