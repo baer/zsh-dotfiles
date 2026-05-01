@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# git-recent — list local branches sorted by last commit. Run 'git recent -h'.
+
+set -euo pipefail
+
+# -- helpers ---------------------------------------------------------
+
+die()  { printf 'git-recent: %s\n' "$1" >&2; exit "${2:-1}"; }
+warn() { printf 'git-recent: %s\n' "$1" >&2; }
+
+# -- usage -----------------------------------------------------------
+
+usage() {
+  cat <<'EOF'
+Usage: git recent [-r] [-n N] [-a] [--pretty|--plain|--json|--null] [--color=WHEN]
+
+Lists local branches sorted by their last commit date, newest first.
+
+Options:
+  -n, --limit N          Show only the N most recent branches.
+  -r, --reverse          Oldest first.
+  -a, --all              Include remote-tracking branches.
+      --pretty           Force columnar output (default on TTY).
+      --plain            Force refnames-only output (default when piped).
+      --json             NDJSON output (one object per branch).
+      --null             NUL-terminated branch names (for `xargs -0`).
+      --color=WHEN       auto|always|never (also honors NO_COLOR).
+      --no-color         Alias for --color=never.
+  -h, --help             Show this message.
+
+Output:
+  When stdout is a TTY: aligned, colored columns with date, current-branch
+  marker, branch name, upstream + ahead/behind, short hash, and subject.
+  When stdout is piped: branch names only, one per line — so `git recent
+  | head -5` and `git recent | fzf` Just Work.
+
+  --json and --null override the auto-detection.
+
+Exit codes:
+  0  success (including empty output)
+  1  usage error
+EOF
+  exit 0
+}
+
+# -- helpers (continued) --------------------------------------------
+
+# Escape a string for inclusion as a JSON value. Handles ", \, control chars.
+json_escape() {
+  local s="$1" out="" c hex
+  local i=0 len=${#s}
+  while [ $i -lt "$len" ]; do
+    c="${s:$i:1}"
+    case "$c" in
+      '"')    out+='\"' ;;
+      $'\\')  out+=$'\\\\' ;;
+      $'\b') out+='\b' ;;
+      $'\f') out+='\f' ;;
+      $'\n') out+='\n' ;;
+      $'\r') out+='\r' ;;
+      $'\t') out+='\t' ;;
+      *)
+        # Control characters (< 0x20) get \u escapes; everything else passes through.
+        printf -v hex '%d' "'$c"
+        if [ "$hex" -lt 32 ]; then
+          printf -v out '%s\\u%04x' "$out" "$hex"
+        else
+          out+="$c"
+        fi
+        ;;
+    esac
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
+# -- parse flags -----------------------------------------------------
+
+include_remotes=false
+reverse=false
+limit=""
+output_mode=auto    # auto | pretty | plain | json | null
+color_when=auto
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)     usage ;;
+    -r|--reverse)  reverse=true; shift ;;
+    -a|--all)      include_remotes=true; shift ;;
+    -n|--limit)    [ $# -ge 2 ] || die "$1 requires a number (see git recent -h)"
+                   case "$2" in ''|*[!0-9]*) die "$1 requires a number (got '$2') (see git recent -h)" ;; esac
+                   limit="$2"; shift 2 ;;
+    --pretty)      output_mode=pretty; shift ;;
+    --plain)       output_mode=plain;  shift ;;
+    --json)        output_mode=json;   shift ;;
+    --null)        output_mode=null;   shift ;;
+    --color=*)     color_when="${1#--color=}"; shift ;;
+    --color)       [ $# -ge 2 ] || die "--color requires auto|always|never"
+                   color_when="$2"; shift 2 ;;
+    --no-color)    color_when=never; shift ;;
+    -*)            die "unknown option: $1 (see git recent -h)" ;;
+    *)             die "unexpected argument: $1 (see git recent -h)" ;;
+  esac
+done
+
+# Validate color_when before resolving.
+case "$color_when" in
+  auto|always|never) ;;
+  *) die "--color must be auto, always, or never (got '$color_when')" ;;
+esac
+
+# Resolve auto.
+if [ "$output_mode" = auto ]; then
+  if [ -t 1 ]; then output_mode=pretty; else output_mode=plain; fi
+fi
+
+# Resolve use_color.
+if [ "$color_when" = always ]; then
+  use_color=true
+elif [ "$color_when" = never ]; then
+  use_color=false
+elif [ -n "${NO_COLOR:-}" ]; then
+  use_color=false
+elif [ -t 1 ]; then
+  use_color=true
+else
+  use_color=false
+fi
+
+# -- resolve colors -------------------------------------------------
+
+if $use_color; then
+  c_branch=$(git config --get-color color.branch.local normal 2>/dev/null || true)
+  c_current=$(git config --get-color color.branch.current green 2>/dev/null || true)
+  c_upstream=$(git config --get-color color.branch.upstream blue 2>/dev/null || true)
+  c_hash=$(git config --get-color color.diff.commit yellow 2>/dev/null || true)
+  c_reset=$(printf '\x1b[0m')
+else
+  c_branch="" c_current="" c_upstream="" c_hash="" c_reset=""
+fi
+
+# -- gather branch records ------------------------------------------
+
+# Records: NL-separated. Fields: ASCII Unit Separator (\x1f).
+# Why \x1f and not NUL: bash herestrings (<<<) truncate at the first \0,
+# so NUL field separators get silently consumed. \x1f is also forbidden
+# in commit subjects and author names (it's a control char), so it's
+# safe to use as a separator across all 8 fields.
+# Fields: 0 head 1 refname 2 upstream 3 track 4 ts 5 hash 6 author 7 subject
+fmt='%(HEAD)%1f%(refname:short)%1f%(upstream:short)%1f%(upstream:track)'
+fmt+='%1f%(committerdate:unix)%1f%(objectname:short)%1f%(authorname)'
+fmt+='%1f%(contents:subject)'
+
+refs=(refs/heads/)
+$include_remotes && refs+=(refs/remotes/)
+
+sort_key='-committerdate'
+$reverse && sort_key='committerdate'
+
+records=()
+while IFS= read -r line; do
+  records+=("$line")
+done < <(git for-each-ref --sort="$sort_key" --format="$fmt" "${refs[@]}")
+
+if [ -n "$limit" ] && [ "${#records[@]}" -gt "$limit" ]; then
+  records=("${records[@]:0:$limit}")
+fi
+
+# -- emit -----------------------------------------------------------
+
+emit_plain() {
+  local rec refname
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r _ refname _ <<<"$rec"
+    printf '%s\n' "$refname"
+  done
+}
+
+emit_null() {
+  local rec refname
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r _ refname _ <<<"$rec"
+    printf '%s\0' "$refname"
+  done
+}
+
+emit_json() {
+  local rec head refname upstream track ts hash author subject current
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    current=false
+    [ "$head" = '*' ] && current=true
+    printf '{"refname":"%s","current":%s,"upstream":"%s","track":"%s","committerdate":%s,"hash":"%s","author":"%s","subject":"%s"}\n' \
+      "$(json_escape "$refname")" \
+      "$current" \
+      "$(json_escape "$upstream")" \
+      "$(json_escape "$track")" \
+      "$ts" \
+      "$(json_escape "$hash")" \
+      "$(json_escape "$author")" \
+      "$(json_escape "$subject")"
+  done
+}
+
+# Determine COLUMNS (terminal width) for truncation. We only truncate
+# when a width is known: explicit COLUMNS env, a TTY (via tput), or skip.
+columns=0
+if [ -n "${COLUMNS:-}" ]; then
+  columns="$COLUMNS"
+elif [ -t 1 ] && command -v tput >/dev/null 2>&1; then
+  columns=$(tput cols 2>/dev/null || echo 0)
+fi
+
+emit_pretty() {
+  local rec head refname upstream track ts hash author subject
+  # Pass 1: measure widths.
+  local bwidth=0 uwidth=0 hwidth=0 up
+  for rec in ${records[@]+"${records[@]}"}; do
+    # shellcheck disable=SC2034  # author is destructured to absorb the field; not displayed.
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    # Compose upstream column: "upstream [track]" if both, else either, else blank.
+    up="$upstream"
+    [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
+    [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
+    (( ${#refname} > bwidth )) && bwidth=${#refname}
+    (( ${#up}      > uwidth )) && uwidth=${#up}
+    (( ${#hash}    > hwidth )) && hwidth=${#hash}
+  done
+
+  # Pass 2: emit. Layout: "YYYY-MM-DD M BRANCH UPSTREAM HASH SUBJECT"
+  # Fixed-width slots: 10 (date) + 1 (sp) + 1 (marker) + 1 + bwidth + 1 +
+  # uwidth + 1 + hwidth + 1 = bwidth + uwidth + hwidth + 16 prefix.
+  local prefix_width=$(( 10 + 1 + 1 + 1 + bwidth + 1 + uwidth + 1 + hwidth + 1 ))
+  local subj_budget=0
+  if [ "$columns" -gt 0 ] && [ "$columns" -gt "$prefix_width" ]; then
+    subj_budget=$(( columns - prefix_width ))
+  fi
+
+  local marker branch_color commit_date
+  for rec in ${records[@]+"${records[@]}"}; do
+    # shellcheck disable=SC2034  # author is destructured to absorb the field; not displayed.
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    marker=' '
+    branch_color="$c_branch"
+    if [ "$head" = '*' ]; then marker='*'; branch_color="$c_current"; fi
+    commit_date=$(date -u -r "$ts" +%Y-%m-%d 2>/dev/null \
+                  || date -u -d "@$ts" +%Y-%m-%d 2>/dev/null \
+                  || echo '----------')
+    up="$upstream"
+    [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
+    [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
+
+    # Truncate subject if budget is set.
+    if [ "$subj_budget" -gt 0 ] && [ "${#subject}" -gt "$subj_budget" ]; then
+      subject="${subject:0:$((subj_budget - 1))}…"
+    fi
+
+    printf '%s %s %s%-*s%s %s%-*s%s %s%-*s%s %s\n' \
+      "$commit_date" "$marker" \
+      "$branch_color" "$bwidth" "$refname" "$c_reset" \
+      "$c_upstream"   "$uwidth" "$up"      "$c_reset" \
+      "$c_hash"       "$hwidth" "$hash"    "$c_reset" \
+      "$subject"
+  done
+}
+
+case "$output_mode" in
+  plain)  emit_plain ;;
+  pretty) emit_pretty ;;
+  json)   emit_json ;;
+  null)   emit_null ;;
+esac
