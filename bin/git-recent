@@ -42,10 +42,36 @@ EOF
 
 # -- parse flags -----------------------------------------------------
 
+include_remotes=false
+
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage ;;
     -*)        die "unknown option: $1 (see git recent -h)" ;;
     *)         die "unexpected argument: $1 (see git recent -h)" ;;
   esac
+done
+
+# -- gather branch records ------------------------------------------
+
+# One record per branch, fields separated by TAB, records by NL.
+# Fields: 0 head 1 refname 2 upstream 3 track 4 ts 5 hash 6 author 7 subject
+fmt='%(HEAD)%09%(refname:short)%09%(upstream:short)%09%(upstream:track)'
+fmt+='%09%(committerdate:unix)%09%(objectname:short)%09%(authorname)'
+fmt+='%09%(contents:subject)'
+
+refs=(refs/heads/)
+$include_remotes && refs+=(refs/remotes/)
+
+records=()
+while IFS= read -r line; do
+  records+=("$line")
+done < <(git for-each-ref --sort=-committerdate --format="$fmt" "${refs[@]}")
+
+# -- emit -----------------------------------------------------------
+
+# Plain mode (default when not a TTY): one refname per line.
+for rec in ${records[@]+"${records[@]}"}; do
+  IFS=$'\t' read -r _head refname _rest <<<"$rec"
+  printf '%s\n' "$refname"
 done
