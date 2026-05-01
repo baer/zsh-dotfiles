@@ -186,7 +186,13 @@ make_branch() {
   [[ "$output" != *$'\x1b'* ]]
 }
 
-@test "NO_COLOR disables color even with --color=auto on TTY" {
+@test "NO_COLOR with --color=auto emits no escapes" {
+  # NOTE: bats's `run` makes `[ -t 1 ]` false inside the script, so
+  # --color=auto already resolves to "off" via the pipe path. We can't
+  # exercise the NO_COLOR branch in isolation without a pseudo-TTY.
+  # This test asserts the integrated behavior (no escapes when both
+  # NO_COLOR and the pipe path agree) — the explicit-override cases
+  # are tested by --color=always and --color=never above.
   init_repo
   make_branch feature 1200000000
   NO_COLOR=1 run "$GIT_RECENT" --pretty --color=auto
