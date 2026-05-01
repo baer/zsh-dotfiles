@@ -43,12 +43,18 @@ EOF
 # -- parse flags -----------------------------------------------------
 
 include_remotes=false
+reverse=false
+limit=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help) usage ;;
-    -*)        die "unknown option: $1 (see git recent -h)" ;;
-    *)         die "unexpected argument: $1 (see git recent -h)" ;;
+    -h|--help)     usage ;;
+    -r|--reverse)  reverse=true; shift ;;
+    -n|--limit)    [ $# -ge 2 ] || die "$1 requires a number"
+                   case "$2" in ''|*[!0-9]*) die "$1 requires a number (got '$2')" ;; esac
+                   limit="$2"; shift 2 ;;
+    -*)            die "unknown option: $1 (see git recent -h)" ;;
+    *)             die "unexpected argument: $1 (see git recent -h)" ;;
   esac
 done
 
@@ -63,10 +69,17 @@ fmt+='%09%(contents:subject)'
 refs=(refs/heads/)
 $include_remotes && refs+=(refs/remotes/)
 
+sort_key='-committerdate'
+$reverse && sort_key='committerdate'
+
 records=()
 while IFS= read -r line; do
   records+=("$line")
-done < <(git for-each-ref --sort=-committerdate --format="$fmt" "${refs[@]}")
+done < <(git for-each-ref --sort="$sort_key" --format="$fmt" "${refs[@]}")
+
+if [ -n "$limit" ] && [ "${#records[@]}" -gt "$limit" ]; then
+  records=("${records[@]:0:$limit}")
+fi
 
 # -- emit -----------------------------------------------------------
 

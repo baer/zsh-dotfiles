@@ -71,3 +71,61 @@ make_branch() {
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "-r reverses sort to oldest-first" {
+  init_repo
+  make_branch oldest 1000000000
+  make_branch newest 1200000000
+  run "$GIT_RECENT" -r
+  [ "$status" -eq 0 ]
+  # main pinned to 1998 → sorts first when reversed.
+  [ "${lines[0]}" = "main" ]
+  [ "${lines[1]}" = "oldest" ]
+  [ "${lines[2]}" = "newest" ]
+}
+
+@test "--reverse is an alias for -r" {
+  init_repo
+  make_branch a 1000000000
+  make_branch b 1200000000
+  run "$GIT_RECENT" --reverse
+  [ "$status" -eq 0 ]
+  # First non-main line should be the older branch.
+  [ "${lines[0]}" = "main" ]
+  [ "${lines[1]}" = "a" ]
+}
+
+@test "-n N limits output to N branches" {
+  init_repo
+  make_branch a 1000000000
+  make_branch b 1100000000
+  make_branch c 1200000000
+  run "$GIT_RECENT" -n 2
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "c" ]
+  [ "${lines[1]}" = "b" ]
+}
+
+@test "--limit N is an alias for -n" {
+  init_repo
+  make_branch a 1000000000
+  run "$GIT_RECENT" --limit 1
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+}
+
+@test "-n requires a numeric argument" {
+  init_repo
+  run "$GIT_RECENT" -n notanumber
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"requires a number"* ]]
+}
+
+@test "-n 0 is allowed (prints nothing)" {
+  init_repo
+  make_branch a 1000000000
+  run "$GIT_RECENT" -n 0
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
