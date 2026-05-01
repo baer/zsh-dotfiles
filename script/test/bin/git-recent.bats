@@ -206,3 +206,48 @@ make_branch() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"--color"* ]]
 }
+
+@test "--pretty aligns branch and upstream columns" {
+  init_repo
+  # Use branch names with non-hex chars (hyphens) so they cannot be matched
+  # by the hash regex [0-9a-f]{7,12}. Different lengths to exercise padding.
+  make_branch short-x 1000000000
+  make_branch much-longer-branch-name 1100000000
+  run "$GIT_RECENT" --pretty --color=never
+  [ "$status" -eq 0 ]
+  # Find lines where the short-hash field — 7+ hex chars surrounded by spaces
+  # — appears, and collect everything before it as a "prefix" string.
+  local hash_offsets=()
+  for line in "${lines[@]}"; do
+    # Look for the short-hash field — 7+ hex chars surrounded by spaces.
+    if [[ "$line" =~ \ ([0-9a-f]{7,12})\  ]]; then
+      hash_offsets+=("${line%% ${BASH_REMATCH[1]} *}")
+    fi
+  done
+  # All hash_offsets entries should have the same length.
+  local first_len=${#hash_offsets[0]}
+  for off in "${hash_offsets[@]}"; do
+    [ "${#off}" -eq "$first_len" ]
+  done
+}
+
+@test "--pretty truncates subject to fit COLUMNS" {
+  init_repo
+  make_branch feature 1200000000 "this is a very long commit subject that should get truncated way before the end"
+  COLUMNS=60 run "$GIT_RECENT" --pretty --color=never
+  [ "$status" -eq 0 ]
+  for line in "${lines[@]}"; do
+    [ "${#line}" -le 60 ]
+  done
+}
+
+@test "--pretty does not truncate when COLUMNS is unset and not a TTY" {
+  init_repo
+  make_branch feature 1200000000 "$(printf 'x%.0s' {1..200})"
+  unset COLUMNS
+  run "$GIT_RECENT" --pretty --color=never
+  [ "$status" -eq 0 ]
+  # The 200-x subject should appear in full somewhere (match 190 x's as a
+  # safe substring — the glob just needs to confirm no truncation occurred).
+  [[ "$output" == *"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"* ]]
+}

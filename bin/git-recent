@@ -136,9 +136,41 @@ emit_plain() {
   done
 }
 
+# Determine COLUMNS (terminal width) for truncation. We only truncate
+# when a width is known: explicit COLUMNS env, a TTY (via tput), or skip.
+columns=0
+if [ -n "${COLUMNS:-}" ]; then
+  columns="$COLUMNS"
+elif [ -t 1 ] && command -v tput >/dev/null 2>&1; then
+  columns=$(tput cols 2>/dev/null || echo 0)
+fi
+
 emit_pretty() {
-  local rec head refname upstream track ts hash author subject commit_date marker up
-  local branch_color
+  local rec head refname upstream track ts hash author subject
+  # Pass 1: measure widths.
+  local bwidth=0 uwidth=0 hwidth=0 up
+  for rec in ${records[@]+"${records[@]}"}; do
+    # shellcheck disable=SC2034  # author is destructured to absorb the field; not displayed.
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    # Compose upstream column: "upstream [track]" if both, else either, else blank.
+    up="$upstream"
+    [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
+    [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
+    (( ${#refname} > bwidth )) && bwidth=${#refname}
+    (( ${#up}      > uwidth )) && uwidth=${#up}
+    (( ${#hash}    > hwidth )) && hwidth=${#hash}
+  done
+
+  # Pass 2: emit. Layout: "YYYY-MM-DD M BRANCH UPSTREAM HASH SUBJECT"
+  # Fixed-width slots: 10 (date) + 1 (sp) + 1 (marker) + 1 + bwidth + 1 +
+  # uwidth + 1 + hwidth + 1 = bwidth + uwidth + hwidth + 16 prefix.
+  local prefix_width=$(( 10 + 1 + 1 + 1 + bwidth + 1 + uwidth + 1 + hwidth + 1 ))
+  local subj_budget=0
+  if [ "$columns" -gt 0 ] && [ "$columns" -gt "$prefix_width" ]; then
+    subj_budget=$(( columns - prefix_width ))
+  fi
+
+  local marker branch_color commit_date
   for rec in ${records[@]+"${records[@]}"}; do
     # shellcheck disable=SC2034  # author is destructured to absorb the field; not displayed.
     IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
@@ -151,11 +183,17 @@ emit_pretty() {
     up="$upstream"
     [ -n "$track" ] && [ -n "$upstream" ] && up="$upstream $track"
     [ -n "$track" ] && [ -z "$upstream" ] && up="$track"
-    printf '%s %s %s%s%s %s%s%s %s%s%s %s\n' \
+
+    # Truncate subject if budget is set.
+    if [ "$subj_budget" -gt 0 ] && [ "${#subject}" -gt "$subj_budget" ]; then
+      subject="${subject:0:$((subj_budget - 1))}…"
+    fi
+
+    printf '%s %s %s%-*s%s %s%-*s%s %s%-*s%s %s\n' \
       "$commit_date" "$marker" \
-      "$branch_color" "$refname" "$c_reset" \
-      "$c_upstream" "$up" "$c_reset" \
-      "$c_hash" "$hash" "$c_reset" \
+      "$branch_color" "$bwidth" "$refname" "$c_reset" \
+      "$c_upstream"   "$uwidth" "$up"      "$c_reset" \
+      "$c_hash"       "$hwidth" "$hash"    "$c_reset" \
       "$subject"
   done
 }
