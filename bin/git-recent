@@ -50,8 +50,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)     usage ;;
     -r|--reverse)  reverse=true; shift ;;
-    -n|--limit)    [ $# -ge 2 ] || die "$1 requires a number"
-                   case "$2" in ''|*[!0-9]*) die "$1 requires a number (got '$2')" ;; esac
+    -n|--limit)    [ $# -ge 2 ] || die "$1 requires a number (see git recent -h)"
+                   case "$2" in ''|*[!0-9]*) die "$1 requires a number (got '$2') (see git recent -h)" ;; esac
                    limit="$2"; shift 2 ;;
     -*)            die "unknown option: $1 (see git recent -h)" ;;
     *)             die "unexpected argument: $1 (see git recent -h)" ;;

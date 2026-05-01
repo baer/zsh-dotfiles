@@ -93,6 +93,7 @@ make_branch() {
   # First non-main line should be the older branch.
   [ "${lines[0]}" = "main" ]
   [ "${lines[1]}" = "a" ]
+  [ "${lines[2]}" = "b" ]
 }
 
 @test "-n N limits output to N branches" {
