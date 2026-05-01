@@ -460,24 +460,44 @@ else
 fi
 
 _install_count=0
+_failed_installers=()
 while IFS= read -r -d '' installer; do
+  rel="${installer#"$DOTFILES_ROOT"/}"
+  printf '\n===== %s =====\n' "$rel" >> "$LOGFILE"
   if $VERBOSE; then
-    log_info "Running ${installer#"$DOTFILES_ROOT"/}..."
-    sh -c "$installer" 2>&1 | tee -a "$LOGFILE"
+    log_info "Running ${rel}..."
+    if ! sh -c "$installer" 2>&1 | tee -a "$LOGFILE"; then
+      _failed_installers+=("$rel")
+    fi
   else
-    run_with_substep_spinner "${installer#"$DOTFILES_ROOT"/}" "$LOGFILE" \
-      sh -c "$installer"
+    if ! run_with_substep_spinner "$rel" "$LOGFILE" sh -c "$installer"; then
+      _failed_installers+=("$rel")
+    fi
   fi
   _install_count=$((_install_count + 1))
 done < <(find "$DOTFILES_ROOT" -name install.sh -not -path '*.git*' -print0)
 
+_failed_count=${#_failed_installers[@]}
+
 if $VERBOSE; then
-  if [[ $_install_count -gt 0 ]]; then
+  if [[ $_failed_count -eq 0 && $_install_count -gt 0 ]]; then
     log_success "install scripts ($_install_count)"
   fi
 else
-  _install_detail="$_install_count completed"
-  phase_resolve ok "$_install_detail"
+  if [[ $_failed_count -gt 0 ]]; then
+    _install_detail="$_install_count ran, $_failed_count failed"
+    phase_resolve warn "$_install_detail"
+  else
+    _install_detail="$_install_count completed"
+    phase_resolve ok "$_install_detail"
+  fi
+fi
+
+if [[ $_failed_count -gt 0 ]]; then
+  log_error_context "$LOGFILE" ""
+  for f in "${_failed_installers[@]}"; do
+    _ACTIONABLE_WARNINGS+=("install script failed: $f — see .bootstrap.log")
+  done
 fi
 
 _current_phase=""

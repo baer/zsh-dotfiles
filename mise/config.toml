@@ -1,6 +1,6 @@
 [tools]
 bun = "latest"
-node = ["lts", "latest"]
+node = "lts"
 pnpm = "latest"
-wrangler = "latest"
+wrangler = "4.87.0"
 yarn = "latest"

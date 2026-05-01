@@ -34,12 +34,27 @@ log_error_context() {
 
   local logname="${logfile##*/}"
 
+  # Surface high-signal error lines from anywhere in the log — the relevant
+  # error often scrolls past the 20-line tail (e.g. npm error mid-log,
+  # followed by trailing "complete!" lines from a later step).
+  local highlights
+  highlights="$(grep -E '^(npm error|mise ERROR|Error:|error:|fatal:|✗ )' "$logfile" 2>/dev/null \
+    | grep -v 'A complete log of this run' \
+    | tail -n 5 || true)"
+
   if [[ "$INTERACTIVE" == true ]] && _is_tty; then
     # Size to terminal: min 80, max terminal width minus indent
     local term_w
     term_w="$(tput cols 2>/dev/null || printf '%s' "${COLUMNS:-80}")"
     local w=$((term_w - 4))  # 2-space indent + small margin
     [[ $w -lt 78 ]] && w=78
+
+    if [[ -n "$highlights" ]]; then
+      printf "\n  ${_BOLD}Errors found:${_RST}\n"
+      while IFS= read -r line; do
+        printf "    ${_RED}%s${_RST}\n" "$line"
+      done <<< "$highlights"
+    fi
 
     local header_content="─ ${logname} (last ${tail_lines} lines) "
     local header_len=${#header_content}
@@ -57,6 +72,12 @@ log_error_context() {
 
     printf "  ${_DIM}Full log: %s${_RST}\n" "$logfile"
   else
+    if [[ -n "$highlights" ]]; then
+      printf "\n  Errors found:\n"
+      while IFS= read -r line; do
+        printf "    %s\n" "$line"
+      done <<< "$highlights"
+    fi
     printf "\n  Last %d lines of %s:\n" "$tail_lines" "$logname"
     tail -n "$tail_lines" "$logfile" | while IFS= read -r line; do
       printf "    %s\n" "$line"
@@ -104,6 +125,12 @@ _detect_error_hint() {
 
   if [[ "$text" == *"EEXIST"* ]] && [[ "$text" == *"npm"* ]]; then
     printf "npm found conflicting files from a previous install.\n        Run the command shown above with --force, or remove the conflicting file."
+    return
+  fi
+
+  if [[ "$text" == *"sharp: Attempting to build from source"* ]] \
+     || ( [[ "$text" == *"node-gyp"* ]] && [[ "$text" == *"npm error"* ]] ); then
+    printf "A native npm module fell back to source build (often a flaky prebuild download).\n        Re-run bootstrap; if it persists, pin the affected tool to a stable version in mise/config.toml."
     return
   fi
 
