@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# localrc — audit and manage repo-owned ~/.localrc settings
+# localrc — sync the repo-managed block in ~/.localrc with documented overrides
 
 set -euo pipefail
 
@@ -11,8 +11,8 @@ DOTFILES_ROOT=$(pwd -P)
 source "$DOTFILES_ROOT/script/lib/term.sh"
 # shellcheck source=lib/log.sh
 source "$DOTFILES_ROOT/script/lib/log.sh"
-# shellcheck source=lib/prompt.sh
-source "$DOTFILES_ROOT/script/lib/prompt.sh"
+# shellcheck source=lib/localrc-registry.sh
+source "$DOTFILES_ROOT/script/lib/localrc-registry.sh"
 # shellcheck source=lib/localrc.sh
 source "$DOTFILES_ROOT/script/lib/localrc.sh"
 
@@ -23,11 +23,16 @@ usage() {
   cat <<EOF
 Usage: script/localrc [options]
 
-Audit and manage machine-local overrides in ~/.localrc.
+Sync the repo-managed block in ~/.localrc. Creates the file with a documented
+template if it doesn't exist; otherwise re-renders the managed block, preserving
+any \`export\` lines you've uncommented inside it.
 
 Options:
-  --check   Audit only; exit non-zero if recommended setup is missing
+  --check   Audit only; exit non-zero if a sync would change ~/.localrc
   --help    Show this message
+
+To override a default, edit ~/.localrc and uncomment the relevant export line.
+Anything outside the managed block is yours — secrets, manual exports, etc.
 EOF
   exit "$code"
 }
@@ -45,162 +50,111 @@ while [[ $# -gt 0 ]]; do
 done
 
 LOCALRC_FILE="$(_localrc_path)"
-LOCALRC_VARS=(
-  EDITOR
-  AGENT
-  XDG_CONFIG_HOME
-  XDG_DATA_HOME
-  XDG_CACHE_HOME
-  XDG_STATE_HOME
-  HOMEBREW_BUNDLE_CASK_SKIP
-  HOMEBREW_BUNDLE_MAS_SKIP
-)
 
-_localrc_default_for() {
-  case "$1" in
-    EDITOR) printf '%s\n' "code" ;;
-    AGENT) printf '%s\n' "claude" ;;
-    XDG_CONFIG_HOME) printf '%s\n' "$HOME/.config" ;;
-    XDG_DATA_HOME) printf '%s\n' "$HOME/.local/share" ;;
-    XDG_CACHE_HOME) printf '%s\n' "$HOME/.cache" ;;
-    XDG_STATE_HOME) printf '%s\n' "$HOME/.local/state" ;;
-    *) return 1 ;;
-  esac
-}
+_print_var_status() {
+  local var="$1" file="$2"
+  local managed unmanaged default desc status detail
+  managed="$(_localrc_get_managed_value "$var" "$file" 2>/dev/null || true)"
+  unmanaged="$(_localrc_get_unmanaged_value "$var" "$file" 2>/dev/null || true)"
+  default="$(_localrc_registry_default "$var" 2>/dev/null || true)"
+  desc="$(_localrc_registry_description "$var")"
 
-_localrc_description_for() {
-  case "$1" in
-    EDITOR) printf '%s\n' "Editor used by e/ee/git helpers" ;;
-    AGENT) printf '%s\n' "Agent CLI launched by bin/a" ;;
-    XDG_CONFIG_HOME) printf '%s\n' "Base directory for config files" ;;
-    XDG_DATA_HOME) printf '%s\n' "Base directory for local app data" ;;
-    XDG_CACHE_HOME) printf '%s\n' "Base directory for caches" ;;
-    XDG_STATE_HOME) printf '%s\n' "Base directory for local state" ;;
-    HOMEBREW_BUNDLE_CASK_SKIP) printf '%s\n' "Homebrew casks to skip on this machine" ;;
-    HOMEBREW_BUNDLE_MAS_SKIP) printf '%s\n' "Mac App Store IDs to skip on this machine" ;;
-  esac
-}
-
-_localrc_should_prompt() {
-  [[ "$1" == "EDITOR" || "$1" == "AGENT" ]]
-}
-
-_localrc_is_auto_managed() {
-  [[ "$1" == "HOMEBREW_BUNDLE_CASK_SKIP" || "$1" == "HOMEBREW_BUNDLE_MAS_SKIP" ]]
-}
-
-_localrc_current_value() {
-  local var="$1"
-  printf '%s' "${!var:-}"
-}
-
-_localrc_print_status() {
-  local var="$1" status="$2" detail="$3"
-  local desc
-  desc="$(_localrc_description_for "$var")"
-  printf "  %s %-26s %s" "$status" "$var" "$desc"
-  [[ -n "$detail" ]] && printf " ${_DIM}(%s)${_RST}" "$detail"
-  printf "\n"
-}
-
-_localrc_prompt_for_value() {
-  local var="$1" current="$2" default="$3"
-  local choice answer
-
-  choice="$(prompt_choice "$var" "Set now" "Skip for now")"
-  printf "\n"
-  [[ "$choice" == "1" ]] || return 1
-
-  answer="$(prompt_user "$(_localrc_description_for "$var")" "${current:-$default}")"
-  printf "\n"
-  printf '%s' "$answer"
-}
-
-audit_failed=false
-changes_made=0
-configured_now=0
-
-if ! $CHECK_ONLY; then
-  printf "\n  ${_BOLD}localrc${_RST}\n\n"
-  log_info "Reviewing repo-managed overrides in ${LOCALRC_FILE/#$HOME/~}"
-fi
-
-for var in "${LOCALRC_VARS[@]}"; do
-  managed_value="$(_localrc_get_managed_value "$var" "$LOCALRC_FILE" 2>/dev/null || true)"
-  unmanaged_value="$(_localrc_get_unmanaged_value "$var" "$LOCALRC_FILE" 2>/dev/null || true)"
-  current_value="$(_localrc_current_value "$var")"
-  default_value="$(_localrc_default_for "$var" 2>/dev/null || true)"
-
-  if [[ -n "$managed_value" && -n "$unmanaged_value" ]]; then
-    audit_failed=true
-    _localrc_print_status "$var" "$_WARN" "managed block plus manual export"
-    continue
-  fi
-
-  if [[ -n "$managed_value" ]]; then
-    _localrc_print_status "$var" "$_CHECK" "$managed_value"
-    continue
-  fi
-
-  if [[ -n "$unmanaged_value" ]]; then
-    audit_failed=true
-    _localrc_print_status "$var" "$_WARN" "manual export outside managed block"
-    continue
-  fi
-
-  if _localrc_is_auto_managed "$var" && [[ -n "$current_value" ]] && ! $CHECK_ONLY; then
-    _localrc_set_managed_var "$var" "$current_value" "$LOCALRC_FILE"
-    changes_made=$((changes_made + 1))
-    configured_now=$((configured_now + 1))
-    _localrc_print_status "$var" "$_CHECK" "$current_value"
-    continue
-  fi
-
-  if _localrc_should_prompt "$var"; then
-    if $CHECK_ONLY; then
-      audit_failed=true
-      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
-      continue
-    fi
-
-    if [[ "$INTERACTIVE" == true ]]; then
-      prompted_value="$(_localrc_prompt_for_value "$var" "$current_value" "$default_value" || true)"
-      if [[ -n "$prompted_value" ]]; then
-        _localrc_set_managed_var "$var" "$prompted_value" "$LOCALRC_FILE"
-        changes_made=$((changes_made + 1))
-        configured_now=$((configured_now + 1))
-        _localrc_print_status "$var" "$_CHECK" "$prompted_value"
-      else
-        audit_failed=true
-        _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
-      fi
-    else
-      audit_failed=true
-      _localrc_print_status "$var" "$_WARN" "using repo default ${current_value:-$default_value}"
-    fi
-    continue
-  fi
-
-  if [[ -n "$default_value" ]]; then
-    _localrc_print_status "$var" "$_INFO" "repo default $default_value"
+  if [[ -n "$unmanaged" ]]; then
+    status="$_WARN"
+    detail="manual export outside managed block"
+  elif [[ -n "$managed" ]]; then
+    status="$_CHECK"
+    detail="\"$managed\""
+  elif [[ -n "$default" ]]; then
+    status="$_INFO"
+    detail="default $default"
   else
-    _localrc_print_status "$var" "$_INFO" "not set"
+    status="$_INFO"
+    detail="not set"
   fi
-done
+
+  printf "  %s %-26s %s ${_DIM}(%s)${_RST}\n" "$status" "$var" "$desc" "$detail"
+}
+
+_print_status_table() {
+  local group label var
+  while IFS= read -r group; do
+    label="$(_localrc_registry_group_label "$group")"
+    printf "\n  ${_BOLD}%s${_RST}\n" "$label"
+    while IFS= read -r var; do
+      _print_var_status "$var" "$LOCALRC_FILE"
+    done < <(_localrc_registry_vars_in "$group")
+  done < <(_localrc_registry_groups)
+}
+
+_audit_drift() {
+  # Returns 0 if a sync would not change the file, 1 otherwise.
+  local tmp
+  tmp="$(mktemp)"
+  trap 'rm -f "$tmp"' RETURN
+
+  if [[ -f "$LOCALRC_FILE" ]]; then
+    cp "$LOCALRC_FILE" "$tmp"
+  fi
+  _localrc_render_managed_block "$tmp"
+
+  if [[ ! -f "$LOCALRC_FILE" ]]; then
+    return 1
+  fi
+
+  if diff -q "$LOCALRC_FILE" "$tmp" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
 
 if $CHECK_ONLY; then
-  $audit_failed && exit 1
-  exit 0
+  if _audit_drift; then
+    exit 0
+  else
+    exit 1
+  fi
 fi
+
+printf "\n  ${_BOLD}localrc${_RST}\n\n"
+log_info "Syncing managed block in ${LOCALRC_FILE/#$HOME/~}"
+
+_pre_existed=false
+_pre_copy=""
+if [[ -f "$LOCALRC_FILE" ]]; then
+  _pre_existed=true
+  _pre_copy="$(mktemp)"
+  trap 'rm -f "$_pre_copy"' EXIT
+  cp "$LOCALRC_FILE" "$_pre_copy"
+fi
+
+_localrc_render_managed_block "$LOCALRC_FILE"
+
+_print_status_table
 
 printf "\n"
-
-if [[ "$changes_made" -gt 0 ]]; then
-  log_success "Updated ${LOCALRC_FILE/#$HOME/~} ($configured_now managed override(s))"
-  log_info "Keep secrets and machine-specific exports outside the managed block"
-elif $audit_failed; then
-  log_warn "No changes made"
-  log_info "Run script/localrc again after moving manual exports into the managed block"
+if ! $_pre_existed; then
+  log_success "Created ${LOCALRC_FILE/#$HOME/~} with documented overrides"
+elif ! diff -q "$_pre_copy" "$LOCALRC_FILE" >/dev/null 2>&1; then
+  log_success "Updated managed block in ${LOCALRC_FILE/#$HOME/~}"
 else
-  log_success "Managed overrides already in good shape"
+  log_success "Managed block already in sync"
 fi
+log_info "Edit ${LOCALRC_FILE/#$HOME/~} and uncomment any \`export\` line to override a default"
+log_info "Anything outside the managed block is yours — secrets, manual exports, etc."
+
+# Warn if any registry var has a manual export outside the managed block
+_unmanaged_warned=false
+while IFS= read -r var; do
+  if [[ -n "$(_localrc_get_unmanaged_value "$var" "$LOCALRC_FILE" 2>/dev/null || true)" ]]; then
+    if ! $_unmanaged_warned; then
+      printf "\n"
+      log_warn "Some repo-recognized vars are exported outside the managed block:"
+      _unmanaged_warned=true
+    fi
+    printf "    %s\n" "$var"
+  fi
+done < <(_localrc_registry_all_vars)
+$_unmanaged_warned && log_info "Move them inside the managed block (uncomment in place) to let script/localrc track them"
+exit 0
