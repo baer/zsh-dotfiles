@@ -11,6 +11,10 @@ _LOCALRC_SH_LOADED=1
 _LOCALRC_BEGIN_MARKER="# >>> dotfiles localrc >>>"
 _LOCALRC_END_MARKER="# <<< dotfiles localrc <<<"
 
+_LOCALRC_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=localrc-registry.sh
+source "$_LOCALRC_SH_DIR/localrc-registry.sh"
+
 _localrc_path() {
   printf '%s\n' "${LOCALRC_PATH:-$HOME/.localrc}"
 }
@@ -202,4 +206,37 @@ _localrc_unset_managed_var() {
   done < <(_localrc_list_managed_lines "$file")
 
   _localrc_write_managed_lines "$file" "${managed_lines[@]}"
+}
+
+_localrc_render_managed_block() {
+  local file="${1:-$(_localrc_path)}"
+  local group label var desc default current
+  local lines=()
+
+  lines+=("# Managed by script/localrc — edits inside this block may be overwritten.")
+  lines+=("# Uncomment any \`export\` line below to override the repo default.")
+
+  while IFS= read -r group; do
+    label="$(_localrc_registry_group_label "$group")"
+    lines+=("")
+    lines+=("# ───── $label ─────")
+
+    while IFS= read -r var; do
+      desc="$(_localrc_registry_description "$var")"
+      default="$(_localrc_registry_default "$var" || true)"
+      current="$(_localrc_get_managed_value "$var" "$file" 2>/dev/null || true)"
+
+      lines+=("")
+      lines+=("# $desc")
+      [[ -n "$default" ]] && lines+=("# Default: $default")
+
+      if [[ -n "$current" ]]; then
+        lines+=("$(_localrc_export_line "$var" "$current")")
+      else
+        lines+=("# $(_localrc_export_line "$var" "$default")")
+      fi
+    done < <(_localrc_registry_vars_in "$group")
+  done < <(_localrc_registry_groups)
+
+  _localrc_write_managed_lines "$file" "${lines[@]}"
 }

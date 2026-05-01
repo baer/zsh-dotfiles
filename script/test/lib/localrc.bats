@@ -80,3 +80,78 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "helix" ]
 }
+
+@test "_localrc_render_managed_block creates a fully-commented block in an empty file" {
+  run _localrc_render_managed_block "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run cat "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# >>> dotfiles localrc >>>"* ]]
+  [[ "$output" == *"# ───── Editor and agent ─────"* ]]
+  [[ "$output" == *"# Editor used by e/ee/git helpers"* ]]
+  [[ "$output" == *"# Default: code"* ]]
+  [[ "$output" == *"# export EDITOR=\"code\""* ]]
+  [[ "$output" == *"# ───── XDG base directories ─────"* ]]
+  [[ "$output" == *"# ───── Homebrew skip lists ─────"* ]]
+  [[ "$output" == *"# <<< dotfiles localrc <<<"* ]]
+}
+
+@test "_localrc_render_managed_block preserves user-uncommented exports" {
+  printf '%s\n' \
+    "# >>> dotfiles localrc >>>" \
+    'export EDITOR="vim"' \
+    "# <<< dotfiles localrc <<<" > "$LOCALRC_PATH"
+
+  run _localrc_render_managed_block "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run _localrc_get_managed_value "EDITOR" "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+  [ "$output" = "vim" ]
+
+  run grep -c '^# export EDITOR=' "$LOCALRC_PATH"
+  [ "$output" = "0" ]
+}
+
+@test "_localrc_render_managed_block is idempotent" {
+  _localrc_render_managed_block "$LOCALRC_PATH"
+  cp "$LOCALRC_PATH" "$BATS_TEST_TMPDIR/.localrc.first"
+  _localrc_render_managed_block "$LOCALRC_PATH"
+
+  run diff "$BATS_TEST_TMPDIR/.localrc.first" "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+}
+
+@test "_localrc_render_managed_block leaves content outside the block untouched" {
+  printf '%s\n' \
+    '# my secret' \
+    'export TOKEN="abc"' > "$LOCALRC_PATH"
+
+  run _localrc_render_managed_block "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run cat "$LOCALRC_PATH"
+  [[ "$output" == *'# my secret'* ]]
+  [[ "$output" == *'export TOKEN="abc"'* ]]
+  [[ "$output" == *"# >>> dotfiles localrc >>>"* ]]
+}
+
+@test "_localrc_render_managed_block drops user-added lines inside the block" {
+  printf '%s\n' \
+    "# >>> dotfiles localrc >>>" \
+    "# my custom comment" \
+    'export NOT_IN_REGISTRY="x"' \
+    'export EDITOR="vim"' \
+    "# <<< dotfiles localrc <<<" > "$LOCALRC_PATH"
+
+  run _localrc_render_managed_block "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run grep -c '^# my custom comment' "$LOCALRC_PATH"
+  [ "$output" = "0" ]
+  run grep -c '^export NOT_IN_REGISTRY' "$LOCALRC_PATH"
+  [ "$output" = "0" ]
+  run _localrc_get_managed_value "EDITOR" "$LOCALRC_PATH"
+  [ "$output" = "vim" ]
+}
