@@ -286,3 +286,53 @@ make_remote_tracking() {
   run "$GIT_RECENT" --all
   [[ "$output" == *"origin/feat"* ]]
 }
+
+@test "--json emits one JSON object per line" {
+  init_repo
+  make_branch feature 1200000000 "add feature"
+  run "$GIT_RECENT" --json
+  [ "$status" -eq 0 ]
+  # Two branches: main and feature. Should be two NDJSON lines.
+  [ "${#lines[@]}" -eq 2 ]
+  for line in "${lines[@]}"; do
+    [[ "$line" == "{"* ]]
+    [[ "$line" == *"}" ]]
+    [[ "$line" == *'"refname":'* ]]
+    [[ "$line" == *'"committerdate":'* ]]
+    [[ "$line" == *'"hash":'* ]]
+    [[ "$line" == *'"subject":'* ]]
+  done
+}
+
+@test "--json escapes special characters in subjects" {
+  init_repo
+  git checkout -q -b 'tricky'
+  GIT_AUTHOR_DATE="@1200000000 +0000" GIT_COMMITTER_DATE="@1200000000 +0000" \
+    git commit --allow-empty -m 'has "quotes" and \\ backslash and	tab' --quiet
+  git checkout -q main
+  run "$GIT_RECENT" --json
+  [ "$status" -eq 0 ]
+  # Find the tricky branch line and verify the escapes are valid.
+  local found=false
+  for line in "${lines[@]}"; do
+    if [[ "$line" == *'"refname":"tricky"'* ]]; then
+      found=true
+      [[ "$line" == *'\"quotes\"'* ]]
+      [[ "$line" == *'\\\\'* ]]   # escaped backslash
+      [[ "$line" == *'\t'* ]]
+    fi
+  done
+  $found
+}
+
+@test "--json piped to jq parses cleanly" {
+  if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
+  init_repo
+  make_branch a 1100000000
+  make_branch b 1200000000
+  run bash -c "$GIT_RECENT --json | jq -r '.refname'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"b"* ]]
+  [[ "$output" == *"a"* ]]
+  [[ "$output" == *"main"* ]]
+}

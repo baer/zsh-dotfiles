@@ -40,12 +40,43 @@ EOF
   exit 0
 }
 
+# -- helpers (continued) --------------------------------------------
+
+# Escape a string for inclusion as a JSON value. Handles ", \, control chars.
+json_escape() {
+  local s="$1" out="" c hex
+  local i=0 len=${#s}
+  while [ $i -lt "$len" ]; do
+    c="${s:$i:1}"
+    case "$c" in
+      '"')    out+='\"' ;;
+      $'\\')  out+=$'\\\\' ;;
+      $'\b') out+='\b' ;;
+      $'\f') out+='\f' ;;
+      $'\n') out+='\n' ;;
+      $'\r') out+='\r' ;;
+      $'\t') out+='\t' ;;
+      *)
+        # Control characters (< 0x20) get \u escapes; everything else passes through.
+        printf -v hex '%d' "'$c"
+        if [ "$hex" -lt 32 ]; then
+          printf -v out '%s\\u%04x' "$out" "$hex"
+        else
+          out+="$c"
+        fi
+        ;;
+    esac
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
 # -- parse flags -----------------------------------------------------
 
 include_remotes=false
 reverse=false
 limit=""
-output_mode=auto    # auto | pretty | plain
+output_mode=auto    # auto | pretty | plain | json
 color_when=auto
 
 while [ $# -gt 0 ]; do
@@ -58,6 +89,7 @@ while [ $# -gt 0 ]; do
                    limit="$2"; shift 2 ;;
     --pretty)      output_mode=pretty; shift ;;
     --plain)       output_mode=plain;  shift ;;
+    --json)        output_mode=json;   shift ;;
     --color=*)     color_when="${1#--color=}"; shift ;;
     --color)       [ $# -ge 2 ] || die "--color requires auto|always|never"
                    color_when="$2"; shift 2 ;;
@@ -137,6 +169,24 @@ emit_plain() {
   done
 }
 
+emit_json() {
+  local rec head refname upstream track ts hash author subject current
+  for rec in ${records[@]+"${records[@]}"}; do
+    IFS=$'\x1f' read -r head refname upstream track ts hash author subject <<<"$rec"
+    current=false
+    [ "$head" = '*' ] && current=true
+    printf '{"refname":"%s","current":%s,"upstream":"%s","track":"%s","committerdate":%s,"hash":"%s","author":"%s","subject":"%s"}\n' \
+      "$(json_escape "$refname")" \
+      "$current" \
+      "$(json_escape "$upstream")" \
+      "$(json_escape "$track")" \
+      "$ts" \
+      "$(json_escape "$hash")" \
+      "$(json_escape "$author")" \
+      "$(json_escape "$subject")"
+  done
+}
+
 # Determine COLUMNS (terminal width) for truncation. We only truncate
 # when a width is known: explicit COLUMNS env, a TTY (via tput), or skip.
 columns=0
@@ -202,4 +252,5 @@ emit_pretty() {
 case "$output_mode" in
   plain)  emit_plain ;;
   pretty) emit_pretty ;;
+  json)   emit_json ;;
 esac
