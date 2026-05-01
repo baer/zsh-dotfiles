@@ -29,6 +29,10 @@ setup() {
 @test "_localrc_registry_default returns the default value" {
   run _localrc_registry_default "EDITOR"
   [ "$status" -eq 0 ]
+  [ "$output" = "hx" ]
+
+  run _localrc_registry_default "E_EDITOR"
+  [ "$status" -eq 0 ]
   [ "$output" = "code" ]
 }
 
@@ -47,5 +51,5 @@ setup() {
 @test "_localrc_registry_all_vars enumerates every var across groups" {
   run _localrc_registry_all_vars
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 8 ]
+  [ "${#lines[@]}" -eq 9 ]
 }

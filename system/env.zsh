@@ -6,6 +6,8 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
-# Generic launcher defaults.
-export EDITOR="${EDITOR:-code}"
+# Generic terminal editor and launcher defaults.
+export EDITOR="${EDITOR:-hx}"
+export VISUAL="${VISUAL:-$EDITOR}"
+export E_EDITOR="${E_EDITOR:-code}"
 export AGENT="${AGENT:-claude}"

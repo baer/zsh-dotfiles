@@ -24,7 +24,7 @@ Everything is organized into topic directories. Add a new `java/` directory and 
 
 ### Current Topics
 
-`atuin` `bin` `claude` `codex` `functions` `ghostty` `git` `homebrew` `node` `pg` `starship` `system` `vim` `zsh`
+`atuin` `bin` `claude` `codex` `functions` `ghostty` `git` `helix` `homebrew` `node` `pg` `starship` `system` `zsh`
 
 ### Infrastructure (not topics)
 
@@ -64,6 +64,7 @@ The `Brewfile` installs and the shell config wires up a set of modern CLI replac
 | [mise](https://mise.jdx.dev) | nvm/rbenv/asdf | Polyglot runtime version manager |
 | [btop](https://github.com/aristocratos/btop) | `top` | Resource monitor |
 | [grc](https://github.com/garabik/grc) | — | Colorizes standard Unix tool output |
+| [Helix](https://helix-editor.com) | terminal editor | Default `$EDITOR` and Git editor |
 
 ### Shell Aliases
 
@@ -93,8 +94,7 @@ Git config lives in `git/gitconfig.symlink` with delta as the diff pager and 20+
 
 - `dot` — Update everything: brew update/upgrade, install Brewfile packages, run topic install scripts
 - `dot -e` — Open the dotfiles directory in your editor
-- `e [path]` — Open a file or directory in `$EDITOR` (defaults to current dir)
-- `ee` — Open `$EDITOR` with `--wait` for interactive use
+- `e [path]` — Open a file or directory in `$E_EDITOR` (defaults to current dir)
 - `a [-- agent-args...]` — Launch `$AGENT` (defaults to `claude`)
 - `a -d [-- agent-args...]` — Launch `$AGENT` with the harness-specific dangerous-mode flag
 - `script/localrc` — Audit and manage repo-owned `~/.localrc` overrides
@@ -128,6 +128,7 @@ Machine-specific config that shouldn't be committed goes in `~/.localrc` (git-ig
 Use `script/localrc` to review or set repo-managed overrides like:
 
 - `EDITOR`
+- `E_EDITOR`
 - `AGENT`
 - XDG base directory overrides
 - Homebrew skip lists

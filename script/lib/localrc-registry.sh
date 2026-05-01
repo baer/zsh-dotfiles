@@ -22,7 +22,7 @@ _localrc_registry_group_label() {
 
 _localrc_registry_vars_in() {
   case "$1" in
-    editor) printf '%s\n' EDITOR AGENT ;;
+    editor) printf '%s\n' EDITOR E_EDITOR AGENT ;;
     xdg) printf '%s\n' XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME ;;
     homebrew) printf '%s\n' HOMEBREW_BUNDLE_CASK_SKIP HOMEBREW_BUNDLE_MAS_SKIP ;;
     *) return 1 ;;
@@ -38,7 +38,8 @@ _localrc_registry_all_vars() {
 
 _localrc_registry_default() {
   case "$1" in
-    EDITOR) printf '%s\n' "code" ;;
+    EDITOR) printf '%s\n' "hx" ;;
+    E_EDITOR) printf '%s\n' "code" ;;
     AGENT) printf '%s\n' "claude" ;;
     XDG_CONFIG_HOME) printf '%s\n' "\$HOME/.config" ;;
     XDG_DATA_HOME) printf '%s\n' "\$HOME/.local/share" ;;
@@ -51,7 +52,8 @@ _localrc_registry_default() {
 
 _localrc_registry_description() {
   case "$1" in
-    EDITOR) printf '%s\n' "Editor used by e/ee/git helpers" ;;
+    EDITOR) printf '%s\n' "Terminal editor used by Git and shell tools" ;;
+    E_EDITOR) printf '%s\n' "GUI/project editor launched by bin/e" ;;
     AGENT) printf '%s\n' "Agent CLI launched by bin/a" ;;
     XDG_CONFIG_HOME) printf '%s\n' "Base directory for config files" ;;
     XDG_DATA_HOME) printf '%s\n' "Base directory for local app data" ;;

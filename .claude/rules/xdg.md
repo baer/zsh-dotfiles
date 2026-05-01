@@ -1,4 +1,4 @@
 - XDG base directories are exported in `system/env.zsh`. They use `:-` to preserve existing values.
 - New tool configs should target `$XDG_CONFIG_HOME/<tool>/` via `install.sh` symlinks, not `*.symlink` to `$HOME`.
-- Git, vim, and zshrc stay in `$HOME` — company tooling co-owns `.gitconfig` and `.zshrc`.
+- Git and zshrc stay in `$HOME` — company tooling co-owns `.gitconfig` and `.zshrc`.
 - Starship config lives at `$XDG_CONFIG_HOME/starship.toml`.
