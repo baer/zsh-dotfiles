@@ -7,6 +7,7 @@ setup() {
   export GIT_CONFIG_GLOBAL=/dev/null
   export GIT_CONFIG_NOSYSTEM=1
   unset GIT_PAGER
+  unset GIT_AUTHOR_DATE GIT_COMMITTER_DATE
 }
 
 init_repo() {
@@ -15,6 +16,8 @@ init_repo() {
   cd "$REPO"
   git config user.name "Test User"
   git config user.email "test@example.com"
+  # Pin main's initial commit to a fixed past date so ordering tests are
+  # deterministic regardless of wall-clock time.
   GIT_AUTHOR_DATE="@900000000 +0000" GIT_COMMITTER_DATE="@900000000 +0000" \
     git commit --allow-empty -m "init" --quiet
 }
@@ -55,7 +58,8 @@ make_branch() {
   [ "${lines[0]}" = "newest" ]
   [ "${lines[1]}" = "middle" ]
   [ "${lines[2]}" = "oldest" ]
-  # main was the initial commit at "now" — should appear too
+  # main is pinned to 1998 by init_repo, so it sorts last — but it must
+  # still appear in the output.
   [[ " ${lines[*]} " == *" main "* ]]
 }
 
