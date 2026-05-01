@@ -10,11 +10,12 @@ setup() {
   run _localrc_set_managed_var "EDITOR" "nvim" "$LOCALRC_PATH"
   [ "$status" -eq 0 ]
 
-  run cat "$LOCALRC_PATH"
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "# >>> dotfiles localrc >>>" ]
-  [ "${lines[1]}" = 'export EDITOR="nvim"' ]
-  [ "${lines[2]}" = "# <<< dotfiles localrc <<<" ]
+  run grep -c '^export EDITOR="nvim"' "$LOCALRC_PATH"
+  [ "$output" = "1" ]
+  run grep -c '^# >>> dotfiles localrc >>>' "$LOCALRC_PATH"
+  [ "$output" = "1" ]
+  run grep -c '^# <<< dotfiles localrc <<<' "$LOCALRC_PATH"
+  [ "$output" = "1" ]
 }
 
 @test "_localrc_set_managed_var replaces an existing managed value" {
@@ -54,19 +55,6 @@ setup() {
   [[ "$output" == *'# trailing note'* ]]
 }
 
-@test "_localrc_unset_managed_var removes the block when it becomes empty" {
-  printf '%s\n' \
-    "# >>> dotfiles localrc >>>" \
-    'export HOMEBREW_BUNDLE_CASK_SKIP="slack"' \
-    "# <<< dotfiles localrc <<<" > "$LOCALRC_PATH"
-
-  run _localrc_unset_managed_var "HOMEBREW_BUNDLE_CASK_SKIP" "$LOCALRC_PATH"
-  [ "$status" -eq 0 ]
-
-  run cat "$LOCALRC_PATH"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
 
 @test "_localrc_get_unmanaged_value ignores exports inside the managed block" {
   printf '%s\n' \
@@ -154,4 +142,28 @@ setup() {
   [ "$output" = "0" ]
   run _localrc_get_managed_value "EDITOR" "$LOCALRC_PATH"
   [ "$output" = "vim" ]
+}
+
+@test "_localrc_set_managed_var produces a fully-rendered block" {
+  run _localrc_set_managed_var "EDITOR" "nvim" "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run cat "$LOCALRC_PATH"
+  [[ "$output" == *"# Managed by script/localrc"* ]]
+  [[ "$output" == *"# ───── Editor and agent ─────"* ]]
+  [[ "$output" == *'export EDITOR="nvim"'* ]]
+  [[ "$output" == *"# Default: code"* ]]
+  [[ "$output" == *"# export AGENT=\"claude\""* ]]
+}
+
+@test "_localrc_unset_managed_var reverts to commented default" {
+  _localrc_set_managed_var "EDITOR" "nvim" "$LOCALRC_PATH"
+
+  run _localrc_unset_managed_var "EDITOR" "$LOCALRC_PATH"
+  [ "$status" -eq 0 ]
+
+  run grep -c '^export EDITOR=' "$LOCALRC_PATH"
+  [ "$output" = "0" ]
+  run grep -c '^# export EDITOR=' "$LOCALRC_PATH"
+  [ "$output" = "1" ]
 }

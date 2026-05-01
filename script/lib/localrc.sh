@@ -174,38 +174,46 @@ _localrc_write_managed_lines() {
 
 _localrc_set_managed_var() {
   local var="$1" value="$2" file="${3:-$(_localrc_path)}"
-  local line found=false
-  local managed_lines=()
 
-  while IFS= read -r line; do
-    if [[ "$line" == "export $var="* ]]; then
-      if [[ "$found" == false ]]; then
-        managed_lines+=("$(_localrc_export_line "$var" "$value")")
-        found=true
+  local existing
+  existing="$(_localrc_get_managed_value "$var" "$file" 2>/dev/null || true)"
+
+  if [[ "$existing" != "$value" ]]; then
+    local managed_lines=()
+    local line found=false
+    while IFS= read -r line; do
+      if [[ "$line" == "export $var="* ]]; then
+        if ! $found; then
+          managed_lines+=("$(_localrc_export_line "$var" "$value")")
+          found=true
+        fi
+      else
+        managed_lines+=("$line")
       fi
-    elif [[ -n "$line" ]]; then
-      managed_lines+=("$line")
-    fi
-  done < <(_localrc_list_managed_lines "$file")
+    done < <(_localrc_list_managed_lines "$file")
 
-  if [[ "$found" == false ]]; then
-    managed_lines+=("$(_localrc_export_line "$var" "$value")")
+    if ! $found; then
+      managed_lines+=("$(_localrc_export_line "$var" "$value")")
+    fi
+
+    _localrc_write_managed_lines "$file" "${managed_lines[@]}"
   fi
 
-  _localrc_write_managed_lines "$file" "${managed_lines[@]}"
+  _localrc_render_managed_block "$file"
 }
 
 _localrc_unset_managed_var() {
   local var="$1" file="${2:-$(_localrc_path)}"
-  local line
-  local managed_lines=()
 
+  local managed_lines=()
+  local line
   while IFS= read -r line; do
     [[ "$line" == "export $var="* ]] && continue
-    [[ -n "$line" ]] && managed_lines+=("$line")
+    managed_lines+=("$line")
   done < <(_localrc_list_managed_lines "$file")
 
   _localrc_write_managed_lines "$file" "${managed_lines[@]}"
+  _localrc_render_managed_block "$file"
 }
 
 _localrc_render_managed_block() {
